@@ -1,20 +1,90 @@
-const express = require('express')
-const router = express.Router()
+const express =
+    require('express');
+
+const router =
+    express.Router();
 
 const {
-  createTestTickets,
-  getTickets,
-  getTicketsByOrder,
-  getTicketByCode,
-  useTicketByCode,
-  transferTicketByCode
-} = require('../controllers/ticketController')
+    getTickets,
+    getTicketsByOrder,
+    getTicketByCode,
+    markTicketUsed,
+    transferTicket,
+    createTestTickets,
+    getMyTickets,
+} = require('../controllers/ticketController');
 
-router.get('/', getTickets)
-router.get('/order/:orderId', getTicketsByOrder)
-router.get('/code/:ticketCode', getTicketByCode)
-router.patch('/code/:ticketCode/use', useTicketByCode)
-router.post('/test', createTestTickets)
-router.patch('/code/:ticketCode/transfer', transferTicketByCode)
+const {
+    auth,
+    optionalAuth,
+} = require('../middleware/auth');
 
-module.exports = router
+
+router.get(
+    '/',
+    getTickets
+);
+
+
+router.post(
+    '/test',
+    optionalAuth,
+    createTestTickets
+);
+
+
+/*
+  Mis tickets
+*/
+
+router.get(
+    '/me',
+    auth,
+    getMyTickets
+);
+
+
+/*
+  Buscar por orderId
+*/
+
+router.get(
+    '/order/:orderId',
+    getTicketsByOrder
+);
+
+
+/*
+  Este endpoint lo utiliza el scanner QR.
+*/
+
+router.get(
+    '/code/:ticketCode',
+    getTicketByCode
+);
+
+
+/*
+  Marcar USED
+*/
+
+router.put(
+    '/:id/use',
+    optionalAuth,
+    markTicketUsed
+);
+
+
+/*
+  Transferir
+*/
+
+router.put(
+    '/:id/transfer',
+    optionalAuth,
+    transferTicket
+);
+
+
+module.exports =
+    router;

@@ -1,48 +1,178 @@
-require('dotenv').config()
-const express = require('express')
-const cors = require('cors')
-const connectDB = require('./config/db')
-const eventRoutes = require('./routes/eventRoutes')
-const orderRoutes = require('./routes/orderRoutes')
-const dashboardRoutes = require('./routes/dashboardRoutes')
-const errorHandler = require('./middleware/errorHandler')
-const ticketRoutes = require('./routes/ticketRoutes')
-const app = express()
-const PORT = process.env.PORT || 5000
-const authRoutes = require('./routes/authRoutes')
+require('dotenv').config();
+
+const express =
+    require('express');
+
+const cors =
+    require('cors');
+
+const {
+    testConnection,
+} = require('./config/db');
+
+
+const eventRoutes =
+    require('./routes/eventRoutes');
+
+const orderRoutes =
+    require('./routes/orderRoutes');
+
+const ticketRoutes =
+    require('./routes/ticketRoutes');
+
+const dashboardRoutes =
+    require('./routes/dashboardRoutes');
+
+const authRoutes =
+    require('./routes/authRoutes');
+
+
+const {
+    auth,
+} = require('./middleware/auth');
+
+const {
+    getMyTickets,
+} = require('./controllers/ticketController');
+
+
+const app =
+    express();
 
 
 app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    credentials: true
-  })
-)
-app.use(express.json())
+    cors({
+        origin: process.env.FRONTEND_URL ||
+            'http://localhost:5173',
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, app: 'RockTickets API', version: '1.0.0' })
-})
+        credentials: true,
+    })
+);
 
-app.use('/api/events', eventRoutes)
-app.use('/api/orders', orderRoutes)
-app.use('/api/dashboard', dashboardRoutes)
-app.use('/api/tickets', ticketRoutes)
-app.use('/api/events', eventRoutes)
-app.use('/api/tickets', ticketRoutes)
-app.use('/api/auth', authRoutes)
 
-app.use((req, res) => {
-  res.status(404).json({ message: `Ruta no encontrada: ${req.originalUrl}` })
-})
+app.use(
+    express.json()
+);
 
-app.use(errorHandler)
 
-connectDB()
-  .then(() => {
-    app.listen(PORT, () => console.log(`Servidor listo en http://localhost:${PORT}`))
-  })
-  .catch((error) => {
-    console.error('Error conectando a MongoDB:', error.message)
-    process.exit(1)
-  })
+app.use(
+    express.urlencoded({
+        extended: true,
+    })
+);
+
+
+/*
+==========================================================
+HEALTH
+==========================================================
+*/
+
+app.get(
+    '/api/health',
+    (req, res) => {
+        res.json({
+            ok: true,
+
+            database: 'MySQL',
+
+            project: 'RockTickets',
+        });
+    }
+);
+
+
+/*
+==========================================================
+ROUTES
+==========================================================
+*/
+
+app.use(
+    '/api/auth',
+    authRoutes
+);
+
+
+app.use(
+    '/api/events',
+    eventRoutes
+);
+
+
+app.use(
+    '/api/orders',
+    orderRoutes
+);
+
+
+app.use(
+    '/api/tickets',
+    ticketRoutes
+);
+
+
+app.use(
+    '/api/dashboard',
+    dashboardRoutes
+);
+
+
+/*
+==========================================================
+COMPATIBILIDAD /api/me/tickets
+==========================================================
+*/
+
+app.get(
+    '/api/me/tickets',
+    auth,
+    getMyTickets
+);
+
+
+/*
+==========================================================
+404
+==========================================================
+*/
+
+app.use(
+    (req, res) => {
+        res.status(404).json({
+            message: 'Ruta no encontrada',
+        });
+    }
+);
+
+
+/*
+==========================================================
+SERVER
+==========================================================
+*/
+
+const PORT =
+    process.env.PORT ||
+    5000;
+
+
+async function startServer() {
+    await testConnection();
+
+    app.listen(
+        PORT,
+        () => {
+            console.log(
+                `🚀 RockTickets API corriendo en http://localhost:${PORT}`
+            );
+
+            console.log(
+                `🗄️ Base de datos: MySQL`
+            );
+        }
+    );
+}
+
+
+startServer();

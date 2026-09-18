@@ -9,6 +9,7 @@ import DashboardPage from './pages/DashboardPage'
 import TicketsPage from './pages/TicketsPage'
 import ValidateTicketPage from './pages/ValidateTicketPage'
 import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/validate" element={<ValidateTicketPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
         </Routes>
       </main>
       <Footer />

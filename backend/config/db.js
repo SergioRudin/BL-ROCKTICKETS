@@ -1,14 +1,35 @@
-const mongoose = require('mongoose')
+const mysql = require('mysql2/promise');
 
-async function connectDB() {
-  const uri = process.env.MONGODB_URI
+const pool = mysql.createPool({
+    host: process.env.MYSQL_HOST || 'localhost',
+    port: process.env.MYSQL_PORT || 3306,
+    user: process.env.MYSQL_USER || 'root',
+    password: process.env.MYSQL_PASSWORD || '',
+    database: process.env.MYSQL_DATABASE || 'rocktickets',
 
-  if (!uri) {
-    throw new Error('Falta MONGODB_URI en el archivo .env')
-  }
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
 
-  const connection = await mongoose.connect(uri)
-  console.log(`MongoDB conectado: ${connection.connection.name}`)
+    decimalNumbers: true,
+});
+
+async function testConnection() {
+    try {
+        const connection = await pool.getConnection();
+
+        console.log('✅ MySQL conectado correctamente');
+
+        connection.release();
+    } catch (error) {
+        console.error('❌ Error conectando MySQL:');
+        console.error(error.message);
+
+        process.exit(1);
+    }
 }
 
-module.exports = connectDB
+module.exports = {
+    pool,
+    testConnection,
+};

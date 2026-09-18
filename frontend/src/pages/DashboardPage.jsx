@@ -20,10 +20,15 @@ function getEventStats(event) {
 
   const available = totalCapacity - ticketsSold
 
-  const occupancy =
-    totalCapacity > 0
-      ? Math.round((ticketsSold / totalCapacity) * 100)
-      : 0
+ const occupancy =
+  totalCapacity > 0
+    ? Number(
+        (
+          (ticketsSold / totalCapacity) *
+          100
+        ).toFixed(2)
+      )
+    : 0
 
   return {
     totalCapacity,
@@ -69,9 +74,18 @@ export default function DashboardPage() {
     setEvents(Array.isArray(data) ? data : [])
   })
 
-  getTickets().then((data) => {
-    setTickets(Array.isArray(data.tickets) ? data.tickets : [])
-  })
+getTickets().then((data) => {
+  if (Array.isArray(data)) {
+    setTickets(data)
+    return
+  }
+
+  setTickets(
+    Array.isArray(data?.tickets)
+      ? data.tickets
+      : []
+  )
+})
 }, [])
 
   const dashboardStats = useMemo(() => {
@@ -143,6 +157,14 @@ const topOccupancyEvent = useMemo(() => {
 const zoneStats = useMemo(() => {
   return Object.values(getZoneStats(events))
 }, [events])
+
+function getTicketEvent(ticket) {
+  return events.find(
+    (event) =>
+      Number(event.id) ===
+      Number(ticket.eventId)
+  )
+}
 
 const usedTickets = useMemo(() => {
   return tickets
@@ -285,16 +307,20 @@ const nextEvent = useMemo(() => {
     ))
   )}
 </section>
-
 <section className="card-blur stack-md">
   <h2>Ventas por zona</h2>
 
   <div className="zone-stats-grid">
     {zoneStats.map((zone) => {
       const occupancy =
-        zone.capacity > 0
-          ? Math.round((zone.sold / zone.capacity) * 100)
-          : 0
+  zone.capacity > 0
+    ? Number(
+        (
+          (zone.sold / zone.capacity) *
+          100
+        ).toFixed(2)
+      )
+    : 0
 
       return (
         <article className="zone-stat-card" key={zone.code}>
