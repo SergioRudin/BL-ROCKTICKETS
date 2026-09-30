@@ -1,12 +1,24 @@
 import { QRCodeCanvas } from 'qrcode.react'
 import { useRef } from 'react'
 import jsPDF from 'jspdf'
+export default function TicketCard({ ticket, onTransfer }) {
+  const displayCode =
+    ticket && ticket.ticketCode
+      ? ticket.ticketCode
+      : ticket && ticket.ticketId
+        ? ticket.ticketId
+        : ''
 
-  export default function TicketCard({ticket,onTransfer}) {
-  const displayCode = ticket?.ticketCode || ticket?.ticketId || ''
   const qrValue = displayCode
+
   const ticketRef = useRef(null)
-  const hasBeenTransferred = ticket?.transferHistory?.length > 0
+
+  const hasBeenTransferred =
+    ticket &&
+    (
+      Number(ticket.transferCount || 0) > 0 ||
+      Boolean(ticket.transferredAt)
+    )
   
 
   const downloadPdf = () => {
@@ -97,8 +109,15 @@ import jsPDF from 'jspdf'
         text: colors.zoneGeneralText
       }
 
-  const qrCanvas = ticketRef.current?.querySelector('canvas')
-  const qrImage = qrCanvas?.toDataURL('image/png')
+const qrCanvas =
+  ticketRef.current
+    ? ticketRef.current.querySelector('canvas')
+    : null
+
+const qrImage =
+  qrCanvas
+    ? qrCanvas.toDataURL('image/png')
+    : null
 
   // Fondo
   setFill(colors.background)
@@ -366,21 +385,31 @@ import jsPDF from 'jspdf'
 
             <div className="ticket-meta-item">
               <span>Estado</span>
-              <strong className={`ticket-status ${ticket.status?.toLowerCase()}`}>
+             <strong
+  className={`ticket-status ${
+    ticket.status
+      ? ticket.status.toLowerCase()
+      : ''
+  }`}
+>
                 {ticket.status === 'ACTIVE' ? 'ACTIVO' : ticket.status}
               </strong>
             </div>
 
             <div className="ticket-meta-item">
               <span>Titular</span>
-              <strong>{ticket.buyer?.name || 'Invitado'}</strong>
+              <strong>
+  {ticket.buyer && ticket.buyer.name
+    ? ticket.buyer.name
+    : 'Invitado'}
+</strong>
             </div>
 
-            {ticket.transferHistory?.length > 0 && (
-            <small className="ticket-transfer-badge">
-              ↻ Transferido {ticket.transferHistory.length} vec{ticket.transferHistory.length > 1 ? 'es' : ''} 
-            </small>
-            )}
+           {hasBeenTransferred && (
+  <small className="ticket-transfer-badge">
+    ↻ Ticket transferido
+  </small>
+)}
 
             <div className="ticket-meta-item">
               <span>Código</span>

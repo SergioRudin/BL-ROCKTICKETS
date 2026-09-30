@@ -95,34 +95,56 @@ export async function deleteEvent(id) {
 }
 
 export async function createOrder(payload) {
-    const response = await fetch(`${API_BASE}/orders`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-    })
+    const token = localStorage.getItem('rocktickets_token')
 
-    if (!response.ok) {
-        throw new Error('No se pudo crear la orden')
+    const headers = {
+        'Content-Type': 'application/json'
     }
 
-    return response.json()
-}
+    if (token) {
+        headers.Authorization = `Bearer ${token}`
+    }
 
-export async function createTestTickets(payload) {
-    const response = await fetch(`${API_BASE}/tickets/test`, {
+    const response = await fetch(`${API_BASE}/orders`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify(payload)
     })
 
     const data = await response.json()
 
     if (!response.ok) {
-        throw new Error(data.message || 'Error al crear tickets')
+        throw new Error(
+            data.message || 'No se pudo crear la orden'
+        )
+    }
+
+    return data
+}
+
+export async function createTestTickets(payload) {
+    const token = localStorage.getItem('rocktickets_token')
+
+    const headers = {
+        'Content-Type': 'application/json'
+    }
+
+    if (token) {
+        headers.Authorization = `Bearer ${token}`
+    }
+
+    const response = await fetch(`${API_BASE}/tickets/test`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+        throw new Error(
+            data.message || 'Error al crear tickets'
+        )
     }
 
     return data
@@ -152,15 +174,28 @@ export async function getTicketByCode(ticketCode) {
     return data
 }
 
-export async function useTicketByCode(ticketCode) {
-    const response = await fetch(`${API_BASE}/tickets/code/${ticketCode}/use`, {
-        method: 'PATCH'
-    })
+export async function useTicket(ticketId) {
+    const token = localStorage.getItem('rocktickets_token')
+
+    const headers = {}
+
+    if (token) {
+        headers.Authorization = `Bearer ${token}`
+    }
+
+    const response = await fetch(
+        `${API_BASE}/tickets/${ticketId}/use`, {
+            method: 'PUT',
+            headers
+        }
+    )
 
     const data = await response.json()
 
     if (!response.ok) {
-        throw new Error(data.message || 'Error al validar ticket')
+        throw new Error(
+            data.message || 'Error al validar ticket'
+        )
     }
 
     return data
@@ -209,11 +244,9 @@ export async function transferTicket(ticketId, ownerName, ownerEmail) {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
-                ...(token ?
-                    {
-                        Authorization: `Bearer ${token}`
-                    } :
-                    {})
+                ...(token ? {
+                    Authorization: `Bearer ${token}`
+                } : {})
             },
             body: JSON.stringify({
                 ownerName,
