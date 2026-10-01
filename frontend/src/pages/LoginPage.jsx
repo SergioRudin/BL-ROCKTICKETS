@@ -153,15 +153,12 @@ export default function LoginPage() {
                 Contraseña
               </label>
 
-              <button
-                type="button"
-                className="auth-forgot-link"
-                onClick={() => {
-                  alert('La recuperación de contraseña será nuestra próxima mejora.')
-                }}
-              >
-                ¿Olvidaste tu contraseña?
-              </button>
+          <Link
+  to="/forgot-password"
+  className="auth-forgot-link"
+>
+  ¿Olvidaste tu contraseña?
+</Link>
             </div>
 
             <div className="auth-input-wrapper">

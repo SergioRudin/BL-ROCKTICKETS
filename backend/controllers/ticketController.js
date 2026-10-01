@@ -265,28 +265,35 @@ async function markTicketUsed(req, res) {
 
 async function transferTicket(req, res) {
     const connection =
-        await pool.getConnection();
+        await pool.getConnection()
 
     try {
-        await connection.beginTransaction();
+        const ticketId =
+            Number(req.params.id)
 
-        const { id } =
-        req.params;
+        const ownerName =
+            String(
+                req.body.ownerName || ''
+            ).trim()
 
-        const {
-            ownerName,
-            ownerEmail,
-        } = req.body;
+        const ownerEmail =
+            String(
+                req.body.ownerEmail || ''
+            )
+            .trim()
+            .toLowerCase()
 
-        if (!ownerName ||
+        if (!ticketId ||
+            !ownerName ||
             !ownerEmail
         ) {
-            await connection.rollback();
-
             return res.status(400).json({
-                message: 'Nombre y correo del nuevo titular son requeridos',
-            });
+                message: 'Nombre y correo del nuevo titular son obligatorios'
+            })
         }
+
+        await connection.beginTransaction()
+
 
         const [tickets] =
         await connection.execute(
@@ -295,41 +302,106 @@ async function transferTicket(req, res) {
         FROM tickets
         WHERE id = ?
         FOR UPDATE
-        `, [id]
-        );
+        `, [ticketId]
+        )
+
 
         if (!tickets.length) {
-            await connection.rollback();
+            await connection.rollback()
 
             return res.status(404).json({
-                message: 'Ticket no encontrado',
-            });
+                message: 'Ticket no encontrado'
+            })
         }
+
 
         const ticket =
-            tickets[0];
+            tickets[0]
 
-        if (
-            Number(
-                ticket.transferCount
-            ) >= 1
+
+        /*
+          Seguridad:
+          el ticket debe pertenecer
+          al usuario autenticado.
+        */
+
+        const currentUserId =
+            Number(req.user.id)
+
+        const ticketUserId =
+            ticket.userId ?
+            Number(ticket.userId) :
+            null
+
+        const userEmail =
+            String(
+                req.user.email || ''
+            )
+            .trim()
+            .toLowerCase()
+
+        const currentOwnerEmail =
+            String(
+                ticket.ownerEmail || ''
+            )
+            .trim()
+            .toLowerCase()
+
+
+        const ownsByUserId =
+            ticketUserId &&
+            ticketUserId === currentUserId
+
+
+        const ownsByEmail =
+            currentOwnerEmail === userEmail
+
+
+        if (!ownsByUserId &&
+            !ownsByEmail
         ) {
-            await connection.rollback();
+            await connection.rollback()
 
-            return res.status(409).json({
-                message: 'Este ticket ya fue transferido anteriormente y no puede volver a transferirse.',
-            });
+            return res.status(403).json({
+                message: 'No puedes transferir un ticket que no te pertenece'
+            })
         }
+
 
         if (
             ticket.status !== 'ACTIVE'
         ) {
-            await connection.rollback();
+            await connection.rollback()
 
-            return res.status(409).json({
-                message: 'Solo se pueden transferir tickets activos.',
-            });
+            return res.status(400).json({
+                message: 'Solo se pueden transferir tickets activos'
+            })
         }
+
+
+        if (
+            Number(
+                ticket.transferCount || 0
+            ) >= 1
+        ) {
+            await connection.rollback()
+
+            return res.status(400).json({
+                message: 'Este ticket ya fue transferido anteriormente'
+            })
+        }
+
+
+        if (
+            ownerEmail === currentOwnerEmail
+        ) {
+            await connection.rollback()
+
+            return res.status(400).json({
+                message: 'El nuevo titular debe ser diferente al actual'
+            })
+        }
+
 
         await connection.execute(
             `
@@ -346,9 +418,10 @@ async function transferTicket(req, res) {
                 ticket.ownerName,
                 ticket.ownerEmail,
                 ownerName,
-                ownerEmail.toLowerCase(),
+                ownerEmail
             ]
-        );
+        )
+
 
         await connection.execute(
             `
@@ -357,40 +430,69 @@ async function transferTicket(req, res) {
         ownerName = ?,
         ownerEmail = ?,
         transferredAt = NOW(),
-        transferCount = transferCount + 1
+        transferCount =
+          transferCount + 1,
+        updatedAt = NOW()
       WHERE id = ?
       `, [
                 ownerName,
-                ownerEmail.toLowerCase(),
-                id,
+                ownerEmail,
+                ticket.id
             ]
-        );
+        )
 
-        await connection.commit();
 
-        const [updated] =
+        await connection.commit()
+
+
+        const [updatedTickets] =
         await pool.execute(
             `
-        SELECT *
-        FROM tickets
-        WHERE id = ?
-        `, [id]
-        );
+        SELECT
+          t.*,
+          e.title AS eventTitle,
+          e.slug AS eventSlug,
+          e.artist AS eventArtist,
+          e.venue AS eventVenue,
+          e.arena AS eventArena,
+          e.city AS eventCity,
+          e.country AS eventCountry,
+          e.date AS eventDate,
+          e.image AS eventImage
+        FROM tickets t
+        JOIN events e
+          ON e.id = t.eventId
+        WHERE t.id = ?
+        LIMIT 1
+        `, [ticket.id]
+        )
 
-        res.json(updated[0]);
+
+        return res.json(
+            updatedTickets[0]
+        )
     } catch (error) {
-        await connection.rollback();
+        try {
+            await connection.rollback()
+        } catch (rollbackError) {
+            console.error(
+                'Error en rollback:',
+                rollbackError
+            )
+        }
 
-        console.error(error);
+        console.error(
+            'Error transfiriendo ticket:',
+            error
+        )
 
-        res.status(500).json({
-            message: 'Error transfiriendo ticket',
-        });
+        return res.status(500).json({
+            message: 'Error al transferir ticket'
+        })
     } finally {
-        connection.release();
+        connection.release()
     }
 }
-
 
 async function createTestTickets(req, res) {
     try {

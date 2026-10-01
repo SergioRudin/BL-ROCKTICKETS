@@ -10,7 +10,8 @@ const {
     testConnection,
 } = require('./config/db');
 
-
+const paymentRoutes =
+    require('./routes/paymentRoutes')
 const eventRoutes =
     require('./routes/eventRoutes');
 
@@ -54,7 +55,10 @@ app.use(
     express.json()
 );
 
-
+app.use(
+    '/api/payments',
+    paymentRoutes
+)
 app.use(
     express.urlencoded({
         extended: true,

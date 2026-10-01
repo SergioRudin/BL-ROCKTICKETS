@@ -1,8 +1,6 @@
-const express =
-    require('express');
+const express = require('express')
 
-const router =
-    express.Router();
+const router = express.Router()
 
 const {
     getTickets,
@@ -11,26 +9,36 @@ const {
     markTicketUsed,
     transferTicket,
     createTestTickets,
-    getMyTickets,
-} = require('../controllers/ticketController');
+    getMyTickets
+} = require('../controllers/ticketController')
 
 const {
     auth,
     optionalAuth,
-} = require('../middleware/auth');
+    requireRole
+} = require('../middleware/auth')
 
+
+/*
+  Todos los tickets
+*/
 
 router.get(
     '/',
+    auth,
+    requireRole('ADMIN'),
     getTickets
-);
+)
 
+/*
+  Crear tickets de prueba
+*/
 
 router.post(
     '/test',
     optionalAuth,
     createTestTickets
-);
+)
 
 
 /*
@@ -41,50 +49,53 @@ router.get(
     '/me',
     auth,
     getMyTickets
-);
+)
 
 
 /*
-  Buscar por orderId
+  Buscar tickets por orderId
 */
 
 router.get(
     '/order/:orderId',
     getTicketsByOrder
-);
+)
 
 
 /*
-  Este endpoint lo utiliza el scanner QR.
+  Buscar ticket por código QR
 */
 
 router.get(
     '/code/:ticketCode',
     getTicketByCode
-);
+)
 
 
 /*
-  Marcar USED
+  Validar ingreso.
+
+  Solo STAFF y ADMIN pueden marcar
+  un ticket como USED.
 */
 
 router.put(
     '/:id/use',
-    optionalAuth,
+    auth,
+    requireRole('STAFF', 'ADMIN'),
     markTicketUsed
-);
+)
 
 
 /*
-  Transferir
+  Transferir ticket
 */
 
 router.put(
     '/:id/transfer',
-    optionalAuth,
+    auth,
     transferTicket
-);
+)
 
 
-module.exports =
-    router;
+module.exports = router

@@ -1,105 +1,334 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import { formatMoney } from '../utils/formatters'
-import { createTestTickets } from '../utils/api'
+import { createOrder } from '../utils/api'
 
 
 export default function CheckoutPage() {
-  const { items, total, removeItem, clearCart } = useCart()
-  const navigate = useNavigate()
-  const [buyer, setBuyer] = useState({ name: '', email: '' })
+  const {
+    items,
+    total,
+    removeItem
+  } = useCart()
 
-async function handleSubmit(e) {
-  e.preventDefault()
+  const [buyer, setBuyer] =
+    useState({
+      name: '',
+      email: ''
+    })
 
-  if (!items.length) return
+  const [loading, setLoading] =
+    useState(false)
 
-  try {
-    const eventId = items[0].eventId
+  const [error, setError] =
+    useState('')
 
-    const groupedByZone = items.reduce((acc, item) => {
-      acc[item.zoneCode] = (acc[item.zoneCode] || 0) + 1
-      return acc
-    }, {})
 
-    const results = []
+  async function handleSubmit(e) {
+    e.preventDefault()
 
-    for (const [zoneCode, quantity] of Object.entries(groupedByZone)) {
-      const result = await createTestTickets({
-        eventId,
-        buyerName: buyer.name,
-        buyerEmail: buyer.email,
-        zoneCode,
-        quantity
-      })
-
-      results.push(result)
+    if (!items.length) {
+      return
     }
 
-    const lastOrderId = results[results.length - 1]?.orderId
+    setError('')
 
-    localStorage.setItem('last_order_id', lastOrderId)
 
-    clearCart()
+    if (
+      !buyer.name.trim() ||
+      !buyer.email.trim()
+    ) {
+      setError(
+        'Completa los datos del comprador'
+      )
 
-    navigate(`/tickets?orderId=${lastOrderId}`)
+      return
+    }
 
-  } catch (error) {
-    console.error(error)
-    alert(error.message || 'No se pudo completar la compra')
+
+    try {
+      setLoading(true)
+
+
+      const eventId =
+        items[0].eventId
+
+
+      // =====================================================
+      // AGRUPAR TICKETS POR ZONA
+      // =====================================================
+
+      const groupedByZone =
+        items.reduce(
+          (acc, item) => {
+            const zoneCode =
+              item.zoneCode
+
+            if (!acc[zoneCode]) {
+              acc[zoneCode] = 0
+            }
+
+            acc[zoneCode] += 1
+
+            return acc
+          },
+          {}
+        )
+
+
+      // =====================================================
+      // CONVERTIR A ITEMS PARA EL BACKEND
+      // =====================================================
+
+      const orderItems =
+        Object.entries(
+          groupedByZone
+        ).map(
+          ([zoneCode, quantity]) => {
+            return {
+              zoneCode,
+              quantity
+            }
+          }
+        )
+
+
+      // =====================================================
+      // CREAR ORDEN PENDING
+      // =====================================================
+
+      const result =
+        await createOrder({
+          eventId,
+
+          buyerName:
+            buyer.name.trim(),
+
+          buyerEmail:
+            buyer.email.trim(),
+
+          items:
+            orderItems
+        })
+
+
+      // =====================================================
+      // VALIDAR RESPUESTA ONVO
+      // =====================================================
+
+      if (
+        !result ||
+        !result.checkoutUrl
+      ) {
+        throw new Error(
+          'No se recibió la URL de pago'
+        )
+      }
+
+
+      if (
+        result.order &&
+        result.order.orderId
+      ) {
+        localStorage.setItem(
+          'last_order_id',
+          result.order.orderId
+        )
+      }
+
+
+      // =====================================================
+      // IMPORTANTE:
+      // NO limpiar carrito todavía.
+      //
+      // Primero mandamos al usuario a ONVO.
+      // Después podemos limpiarlo cuando el pago esté
+      // confirmado.
+      // =====================================================
+
+
+      window.location.href =
+        result.checkoutUrl
+    } catch (error) {
+      console.error(
+        'Error iniciando pago:',
+        error
+      )
+
+      setError(
+        error.message ||
+        'No se pudo iniciar el pago'
+      )
+
+      setLoading(false)
+    }
   }
-}
 
 
   return (
     <div className="checkout-layout">
-      <section className="card-blur stack-md">
-        <h2>Resumen de compra</h2>
-        {!items.length ? (
-          <p className="muted">No hay tickets en el carrito.</p>
-        ) : (
-          items.map((item) => (
-            <article className="cart-row" key={item.seatKey}>
-              <div>
-                <strong>{item.eventTitle}</strong>
-                <p>{item.zone} · Entrada</p>
-              </div>
-              <div className="cart-row__actions">
-                <span>{formatMoney(item.price)}</span>
-                <button className="btn-ghost" onClick={() => removeItem(item.seatKey)}>Quitar</button>
-              </div>
-            </article>
-          ))
-        )}
-      </section>
 
       <section className="card-blur stack-md">
-        <h2>Datos del comprador</h2>
-        <form className="stack-sm" onSubmit={handleSubmit}>
+
+        <h2>
+          Resumen de compra
+        </h2>
+
+
+        {!items.length ? (
+
+          <p className="muted">
+            No hay tickets en el carrito.
+          </p>
+
+        ) : (
+
+          items.map(
+            (item) => (
+              <article
+                className="cart-row"
+                key={item.seatKey}
+              >
+
+                <div>
+
+                  <strong>
+                    {item.eventTitle}
+                  </strong>
+
+                  <p>
+                    {item.zone} · Entrada
+                  </p>
+
+                </div>
+
+
+                <div className="cart-row__actions">
+
+                  <span>
+                    {formatMoney(
+                      item.price
+                    )}
+                  </span>
+
+
+                  <button
+                    className="btn-ghost"
+                    type="button"
+                    disabled={loading}
+                    onClick={() =>
+                      removeItem(
+                        item.seatKey
+                      )
+                    }
+                  >
+                    Quitar
+                  </button>
+
+                </div>
+
+              </article>
+            )
+          )
+
+        )}
+
+      </section>
+
+
+      <section className="card-blur stack-md">
+
+        <h2>
+          Datos del comprador
+        </h2>
+
+
+        <form
+          className="stack-sm"
+          onSubmit={handleSubmit}
+        >
+
           <input
             type="text"
             placeholder="Nombre completo"
             value={buyer.name}
-            onChange={(e) => setBuyer((prev) => ({ ...prev, name: e.target.value }))}
+            disabled={loading}
+            onChange={(e) =>
+              setBuyer(
+                (prev) => ({
+                  ...prev,
+                  name:
+                    e.target.value
+                })
+              )
+            }
             required
           />
+
+
           <input
             type="email"
             placeholder="Correo electrónico"
             value={buyer.email}
-            onChange={(e) => setBuyer((prev) => ({ ...prev, email: e.target.value }))}
+            disabled={loading}
+            onChange={(e) =>
+              setBuyer(
+                (prev) => ({
+                  ...prev,
+                  email:
+                    e.target.value
+                })
+              )
+            }
             required
           />
+
+
           <div className="total-box">
-            <span>Total</span>
-            <strong>{formatMoney(total)}</strong>
+
+            <span>
+              Total
+            </span>
+
+            <strong>
+              {formatMoney(
+                total
+              )}
+            </strong>
+
           </div>
-          <button className="btn-primary" type="submit" disabled={!items.length}>
-            Confirmar compra y emitir tickets
+
+
+          {
+            error && (
+              <div className="auth-error">
+                {error}
+              </div>
+            )
+          }
+
+
+          <button
+            className="btn-primary"
+            type="submit"
+            disabled={
+              !items.length ||
+              loading
+            }
+          >
+
+            {
+              loading
+                ? 'Redirigiendo al pago...'
+                : 'Continuar al pago'
+            }
+
           </button>
+
         </form>
+
       </section>
+
     </div>
   )
 }

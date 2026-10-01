@@ -2,22 +2,26 @@ import { mockEvents } from '../data/mockEvents'
 
 const API_BASE = 'http://localhost:5000/api'
 
+
 function normalizeEvent(event) {
-    const zones = Array.isArray(event.zones) ?
+    const zones =
+        Array.isArray(event.zones) ?
         event.zones : []
 
-    const generalZone = zones.find(
-        (zone) => zone.code === 'GENERAL'
-    )
+    const generalZone =
+        zones.find(
+            (zone) => zone.code === 'GENERAL'
+        )
 
-    const vipZone = zones.find(
-        (zone) => zone.code === 'VIP'
-    )
+    const vipZone =
+        zones.find(
+            (zone) => zone.code === 'VIP'
+        )
 
     return {
         ...event,
 
-        id: event._id || event.id,
+        id: event.id,
 
         priceGeneral: generalZone && generalZone.price ?
             generalZone.price : event.priceGeneral || 0,
@@ -27,187 +31,367 @@ function normalizeEvent(event) {
     }
 }
 
+
 export async function getEvents() {
     try {
-        const response = await fetch(`${API_BASE}/events`)
+        const response =
+            await fetch(
+                `${API_BASE}/events`
+            )
 
         if (!response.ok) {
-            throw new Error('API no disponible')
+            throw new Error(
+                'API no disponible'
+            )
         }
 
-        const data = await response.json()
-        const events = Array.isArray(data) ? data : data.events || []
+        const data =
+            await response.json()
 
-        return events.map(normalizeEvent)
+        const events =
+            Array.isArray(data) ?
+            data :
+            data && Array.isArray(data.events) ?
+            data.events : []
+
+        return events.map(
+            normalizeEvent
+        )
     } catch (error) {
-        console.error('Error cargando eventos:', error)
+        console.error(
+            'Error cargando eventos:',
+            error
+        )
+
         return mockEvents
     }
 }
 
+
 export async function getEventBySlug(slug) {
-    const events = await getEvents()
-    return events.find((event) => event.slug === slug)
+    const events =
+        await getEvents()
+
+    return events.find(
+        (event) =>
+        event.slug === slug
+    )
 }
+
 
 export async function createEvent(eventData) {
-    const response = await fetch(`${API_BASE}/events`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(eventData)
-    })
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
 
-    if (!response.ok) {
-        throw new Error('No se pudo crear el evento')
+    if (!token) {
+        throw new Error(
+            'Debes iniciar sesión como administrador'
+        )
     }
 
-    return await response.json()
-}
+    const response =
+        await fetch(
+            `${API_BASE}/events`, {
+                method: 'POST',
 
-export async function updateEvent(id, eventData) {
-    const response = await fetch(`${API_BASE}/events/${id}`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(eventData)
-    })
+                headers: {
+                    'Content-Type': 'application/json',
+
+                    Authorization: `Bearer ${token}`
+                },
+
+                body: JSON.stringify(
+                    eventData
+                )
+            }
+        )
+
+    const data =
+        await response.json()
 
     if (!response.ok) {
-        throw new Error('No se pudo actualizar el evento')
+        throw new Error(
+            data.message ||
+            'No se pudo crear el evento'
+        )
     }
 
-    return await response.json()
+    return data
 }
+
+
+export async function updateEvent(
+    id,
+    eventData
+) {
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
+
+    if (!token) {
+        throw new Error(
+            'Debes iniciar sesión como administrador'
+        )
+    }
+
+    const response =
+        await fetch(
+            `${API_BASE}/events/${id}`, {
+                method: 'PUT',
+
+                headers: {
+                    'Content-Type': 'application/json',
+
+                    Authorization: `Bearer ${token}`
+                },
+
+                body: JSON.stringify(
+                    eventData
+                )
+            }
+        )
+
+    const data =
+        await response.json()
+
+    if (!response.ok) {
+        throw new Error(
+            data.message ||
+            'No se pudo actualizar el evento'
+        )
+    }
+
+    return data
+}
+
 
 export async function deleteEvent(id) {
-    const response = await fetch(`${API_BASE}/events/${id}`, {
-        method: 'DELETE'
-    })
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
 
-    if (!response.ok) {
-        throw new Error('No se pudo eliminar el evento')
+    if (!token) {
+        throw new Error(
+            'Debes iniciar sesión como administrador'
+        )
     }
 
-    return await response.json()
+    const response =
+        await fetch(
+            `${API_BASE}/events/${id}`, {
+                method: 'DELETE',
+
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            }
+        )
+
+    const data =
+        await response.json()
+
+    if (!response.ok) {
+        throw new Error(
+            data.message ||
+            'No se pudo eliminar el evento'
+        )
+    }
+
+    return data
 }
+
 
 export async function createOrder(payload) {
-    const token = localStorage.getItem('rocktickets_token')
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
 
     const headers = {
         'Content-Type': 'application/json'
     }
 
     if (token) {
-        headers.Authorization = `Bearer ${token}`
+        headers.Authorization =
+            `Bearer ${token}`
     }
 
-    const response = await fetch(`${API_BASE}/orders`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-    })
+    const response =
+        await fetch(
+            'http://localhost:5000/api/orders', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(
+                    payload
+                )
+            }
+        )
 
-    const data = await response.json()
+    const data =
+        await response.json()
 
     if (!response.ok) {
         throw new Error(
-            data.message || 'No se pudo crear la orden'
+            data.message ||
+            'No se pudo crear la orden'
         )
     }
 
     return data
 }
+
 
 export async function createTestTickets(payload) {
-    const token = localStorage.getItem('rocktickets_token')
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
 
     const headers = {
         'Content-Type': 'application/json'
     }
 
     if (token) {
-        headers.Authorization = `Bearer ${token}`
+        headers.Authorization =
+            `Bearer ${token}`
     }
 
-    const response = await fetch(`${API_BASE}/tickets/test`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-    })
+    const response =
+        await fetch(
+            `${API_BASE}/tickets/test`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(
+                    payload
+                )
+            }
+        )
 
-    const data = await response.json()
+    const data =
+        await response.json()
 
     if (!response.ok) {
         throw new Error(
-            data.message || 'Error al crear tickets'
+            data.message ||
+            'Error al crear tickets'
         )
     }
 
     return data
 }
+
 
 export async function getTicketsByOrder(orderId) {
-    const response = await fetch(`${API_BASE}/tickets/order/${orderId}`)
+    const response =
+        await fetch(
+            `${API_BASE}/tickets/order/${orderId}`
+        )
 
-    const data = await response.json()
-
-    if (!response.ok) {
-        throw new Error(data.message || 'Error al obtener tickets')
-    }
-
-    return data
-}
-
-export async function getTicketByCode(ticketCode) {
-    const response = await fetch(`${API_BASE}/tickets/code/${ticketCode}`)
-
-    const data = await response.json()
-
-    if (!response.ok) {
-        throw new Error(data.message || 'Error al buscar ticket')
-    }
-
-    return data
-}
-
-export async function useTicket(ticketId) {
-    const token = localStorage.getItem('rocktickets_token')
-
-    const headers = {}
-
-    if (token) {
-        headers.Authorization = `Bearer ${token}`
-    }
-
-    const response = await fetch(
-        `${API_BASE}/tickets/${ticketId}/use`, {
-            method: 'PUT',
-            headers
-        }
-    )
-
-    const data = await response.json()
+    const data =
+        await response.json()
 
     if (!response.ok) {
         throw new Error(
-            data.message || 'Error al validar ticket'
+            data.message ||
+            'Error al obtener tickets'
         )
     }
 
     return data
 }
 
-export async function getTickets() {
-    const response = await fetch(`${API_BASE}/tickets`)
 
-    const data = await response.json()
+export async function getTicketByCode(ticketCode) {
+    const response =
+        await fetch(
+            `${API_BASE}/tickets/code/${ticketCode}`
+        )
+
+    const data =
+        await response.json()
 
     if (!response.ok) {
-        throw new Error(data.message || 'Error al obtener tickets')
+        throw new Error(
+            data.message ||
+            'Error al buscar ticket'
+        )
+    }
+
+    return data
+}
+
+
+export async function useTicket(ticketId) {
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
+
+    if (!token) {
+        throw new Error(
+            'Debes iniciar sesión para validar tickets'
+        )
+    }
+
+    const headers = {
+        Authorization: `Bearer ${token}`
+    }
+
+    const response =
+        await fetch(
+            `${API_BASE}/tickets/${ticketId}/use`, {
+                method: 'PUT',
+                headers
+            }
+        )
+
+    const data =
+        await response.json()
+
+    if (!response.ok) {
+        throw new Error(
+            data.message ||
+            'Error al validar ticket'
+        )
+    }
+
+    return data
+}
+
+
+export async function getTickets() {
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
+
+    if (!token) {
+        throw new Error(
+            'Debes iniciar sesión como administrador'
+        )
+    }
+
+    const response =
+        await fetch(
+            `${API_BASE}/tickets`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            }
+        )
+
+    const data =
+        await response.json()
+
+    if (!response.ok) {
+        throw new Error(
+            data.message ||
+            'Error al obtener tickets'
+        )
     }
 
     return data
@@ -215,51 +399,115 @@ export async function getTickets() {
 
 
 export async function getMyTickets() {
-    const token = localStorage.getItem('rocktickets_token')
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
 
     if (!token) {
-        throw new Error('Debes iniciar sesión para ver tus tickets')
+        throw new Error(
+            'Debes iniciar sesión para ver tus tickets'
+        )
     }
 
-    const response = await fetch(`${API_BASE}/me/tickets`, {
-        headers: {
-            Authorization: `Bearer ${token}`
-        }
-    })
+    const response =
+        await fetch(
+            `${API_BASE}/me/tickets`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            }
+        )
 
-    const data = await response.json()
+    const data =
+        await response.json()
 
     if (!response.ok) {
-        throw new Error(data.message || 'Error al obtener tus tickets')
+        throw new Error(
+            data.message ||
+            'Error al obtener tus tickets'
+        )
     }
 
     return data
 }
 
-export async function transferTicket(ticketId, ownerName, ownerEmail) {
-    const token = localStorage.getItem('rocktickets_token')
 
-    const response = await fetch(
-        `${API_BASE}/tickets/${ticketId}/transfer`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token ? {
-                    Authorization: `Bearer ${token}`
-                } : {})
-            },
-            body: JSON.stringify({
-                ownerName,
-                ownerEmail
-            })
-        }
-    )
+export async function transferTicket(
+    ticketId,
+    ownerName,
+    ownerEmail
+) {
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
 
-    const data = await response.json()
+    const headers = {
+        'Content-Type': 'application/json'
+    }
+
+    if (token) {
+        headers.Authorization =
+            `Bearer ${token}`
+    }
+
+    const response =
+        await fetch(
+            `${API_BASE}/tickets/${ticketId}/transfer`, {
+                method: 'PUT',
+
+                headers,
+
+                body: JSON.stringify({
+                    ownerName,
+                    ownerEmail
+                })
+            }
+        )
+
+    const data =
+        await response.json()
 
     if (!response.ok) {
         throw new Error(
-            data.message || 'No se pudo transferir el ticket'
+            data.message ||
+            'No se pudo transferir el ticket'
+        )
+    }
+
+    return data
+}
+
+
+export async function getDashboard() {
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
+
+    if (!token) {
+        throw new Error(
+            'Debes iniciar sesión como administrador'
+        )
+    }
+
+    const response =
+        await fetch(
+            `${API_BASE}/dashboard`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            }
+        )
+
+    const data =
+        await response.json()
+
+    if (!response.ok) {
+        throw new Error(
+            data.message ||
+            'No se pudo cargar el dashboard'
         )
     }
 

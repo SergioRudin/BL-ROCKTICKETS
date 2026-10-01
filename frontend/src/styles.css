@@ -2540,3 +2540,15 @@ textarea {
         grid-template-columns: 1fr;
     }
 }
+
+.account-card {
+    padding: 2rem;
+}
+
+.account-card h2 {
+    margin-top: 0;
+}
+
+.account-card .form-grid {
+    margin-top: 1.5rem;
+}
