@@ -2,6 +2,9 @@ import { mockEvents } from '../data/mockEvents'
 
 const API_BASE = 'http://localhost:5000/api'
 
+const API_URL =
+    import.meta.env.VITE_API_URL ||
+    'http://localhost:5000/api'
 
 function normalizeEvent(event) {
     const zones =
@@ -510,6 +513,75 @@ export async function getDashboard() {
             'No se pudo cargar el dashboard'
         )
     }
+
+    return data
+}
+
+export async function getOrderStatus(
+    orderId
+) {
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
+
+
+    const response =
+        await fetch(
+            `http://localhost:5000/api/orders/${encodeURIComponent(
+        orderId
+      )}/status`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            }
+        )
+
+
+    const data =
+        await response.json()
+
+
+    if (!response.ok) {
+        throw new Error(
+            data.message ||
+            'No se pudo consultar la orden'
+        )
+    }
+
+
+    return data
+}
+
+
+export async function getMyOrders() {
+    const token =
+        localStorage.getItem(
+            'rocktickets_token'
+        )
+
+
+    const response =
+        await fetch(
+            'http://localhost:5000/api/orders/me', {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            }
+        )
+
+
+    const data =
+        await response.json()
+
+
+    if (!response.ok) {
+        throw new Error(
+            data.message ||
+            'No se pudo cargar el historial'
+        )
+    }
+
 
     return data
 }

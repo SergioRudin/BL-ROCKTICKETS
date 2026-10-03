@@ -1,37 +1,61 @@
-const express =
-    require('express');
+const express = require('express')
 
-const router =
-    express.Router();
-
+const router = express.Router()
 
 const {
     createOrder,
     getOrderTickets,
-} = require(
-    '../controllers/orderController'
-);
-
+    getOrderStatus,
+    getMyOrders
+} = require('../controllers/orderController')
 
 const {
-    optionalAuth,
-} = require(
-    '../middleware/auth'
-);
+    auth
+} = require('../middleware/auth')
 
+
+// =========================================================
+// CREAR ORDEN
+// =========================================================
 
 router.post(
     '/',
-    optionalAuth,
+    auth,
     createOrder
-);
+)
 
+
+// =========================================================
+// MIS ÓRDENES
+// =========================================================
+
+router.get(
+    '/me',
+    auth,
+    getMyOrders
+)
+
+
+// =========================================================
+// ESTADO DE ORDEN
+// =========================================================
+
+router.get(
+    '/:orderId/status',
+    auth,
+    getOrderStatus
+)
+
+
+// =========================================================
+// TICKETS DE UNA ORDEN
+// =========================================================
 
 router.get(
     '/:orderId/tickets',
+    auth,
     getOrderTickets
-);
+)
 
 
-module.exports =
-    router;
+module.exports = router

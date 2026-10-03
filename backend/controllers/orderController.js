@@ -1,6 +1,10 @@
 const crypto = require('crypto')
 
 const {
+    releaseOrderReservation
+} = require('../services/reservationService')
+
+const {
     pool
 } = require('../config/db')
 
@@ -16,6 +20,10 @@ const {
     createCheckoutSession
 } = require('../services/onvoService')
 
+
+// =========================================================
+// HELPERS
+// =========================================================
 
 function generateOrderId() {
     return (
@@ -44,7 +52,7 @@ function generateTicketCode() {
 
 
 // =========================================================
-// CREAR ORDEN PENDING + CHECKOUT ONVO
+// CREAR ORDEN PENDING + RESERVA + CHECKOUT ONVO
 // =========================================================
 
 async function createPurchase({
@@ -61,6 +69,7 @@ async function createPurchase({
 
     let orderDbId = null
     let orderId = null
+    let committed = false
 
     try {
         await connection.beginTransaction()
@@ -138,7 +147,7 @@ async function createPurchase({
 
 
         // =====================================================
-        // VALIDAR ZONAS
+        // VALIDAR ZONAS + BLOQUEAR INVENTARIO
         // =====================================================
 
         const processedItems = []
@@ -170,7 +179,9 @@ async function createPurchase({
             }
 
 
-            if (!normalizedQuantity ||
+            if (!Number.isInteger(
+                    normalizedQuantity
+                ) ||
                 normalizedQuantity < 1
             ) {
                 throw new Error(
@@ -178,6 +189,14 @@ async function createPurchase({
                 )
             }
 
+
+            /*
+              FOR UPDATE es importante.
+
+              Si dos personas intentan comprar
+              las últimas entradas al mismo tiempo,
+              una transacción espera a la otra.
+            */
 
             const [zones] =
             await connection.execute(
@@ -187,6 +206,7 @@ async function createPurchase({
           WHERE eventId = ?
             AND code = ?
           LIMIT 1
+          FOR UPDATE
           `, [
                     eventId,
                     normalizedZoneCode
@@ -205,13 +225,28 @@ async function createPurchase({
                 zones[0]
 
 
-            const available =
+            const capacity =
                 Number(
                     zone.capacity
-                ) -
+                )
+
+
+            const sold =
                 Number(
                     zone.sold
                 )
+
+
+            const reserved =
+                Number(
+                    zone.reserved || 0
+                )
+
+
+            const available =
+                capacity -
+                sold -
+                reserved
 
 
             if (
@@ -262,10 +297,14 @@ async function createPurchase({
           buyerEmail,
           total,
           status,
-          paymentProvider
+          paymentProvider,
+          reservationExpiresAt
         )
         VALUES (
-          ?, ?, ?, ?, ?, ?, 'PENDING', 'ONVO'
+          ?, ?, ?, ?, ?, ?,
+          'PENDING',
+          'ONVO',
+          DATE_ADD(NOW(), INTERVAL 30 MINUTE)
         )
         `, [
                 orderId,
@@ -283,7 +322,7 @@ async function createPurchase({
 
 
         // =====================================================
-        // GUARDAR ORDER ITEMS
+        // GUARDAR ITEMS + RESERVAR INVENTARIO
         // =====================================================
 
         for (
@@ -317,14 +356,35 @@ async function createPurchase({
                     zone.price
                 ]
             )
+
+
+            /*
+              Todavía NO aumentamos sold.
+
+              Mientras el usuario está en ONVO,
+              esas entradas quedan reservadas.
+            */
+
+            await connection.execute(
+                `
+        UPDATE event_zones
+        SET reserved = reserved + ?
+        WHERE id = ?
+        `, [
+                    quantity,
+                    zone.id
+                ]
+            )
         }
 
 
         await connection.commit()
 
+        committed = true
+
 
         // =====================================================
-        // CREAR LINE ITEMS ONVO
+        // LINE ITEMS ONVO
         // =====================================================
 
         const lineItems =
@@ -353,23 +413,36 @@ async function createPurchase({
 
         let checkoutSession
 
+
         try {
             checkoutSession =
                 await createCheckoutSession({
                     orderId,
+
                     buyerEmail: normalizedBuyerEmail,
+
                     lineItems
                 })
         } catch (error) {
-            await pool.execute(
-                `
-        UPDATE orders
-        SET status = 'PAYMENT_ERROR'
-        WHERE id = ?
-        `, [
-                    orderDbId
-                ]
-            )
+            /*
+              La reserva ya fue COMMIT.
+
+              Si ONVO no puede crear el checkout,
+              debemos devolver las entradas
+              inmediatamente.
+            */
+
+            try {
+                await releaseOrderReservation(
+                    orderId,
+                    'PAYMENT_ERROR'
+                )
+            } catch (releaseError) {
+                console.error(
+                    'Error liberando reserva después de fallo ONVO:',
+                    releaseError
+                )
+            }
 
             throw error
         }
@@ -400,7 +473,7 @@ async function createPurchase({
 
 
         // =====================================================
-        // RESPUESTA AL FRONTEND
+        // RESPUESTA
         // =====================================================
 
         return {
@@ -433,13 +506,23 @@ async function createPurchase({
             checkoutUrl: checkoutSession.url
         }
     } catch (error) {
-        try {
-            await connection.rollback()
-        } catch (rollbackError) {
-            console.error(
-                'Error haciendo rollback:',
-                rollbackError
-            )
+        /*
+          Si todavía estábamos dentro de la
+          transacción inicial, hacemos rollback.
+
+          Si ya hicimos commit, no intentamos
+          revertir esa misma transacción.
+        */
+
+        if (!committed) {
+            try {
+                await connection.rollback()
+            } catch (rollbackError) {
+                console.error(
+                    'Error haciendo rollback:',
+                    rollbackError
+                )
+            }
         }
 
         throw error
@@ -451,7 +534,7 @@ async function createPurchase({
 
 // =========================================================
 // CONFIRMAR ORDEN PAGADA
-// ESTA FUNCIÓN LA LLAMARÁ EL WEBHOOK DE ONVO
+// LLAMADA DESDE WEBHOOK ONVO
 // =========================================================
 
 async function fulfillPaidOrder({
@@ -471,7 +554,7 @@ async function fulfillPaidOrder({
 
 
         // =====================================================
-        // BLOQUEAR ORDER
+        // BLOQUEAR ORDEN
         // =====================================================
 
         const [orders] =
@@ -511,18 +594,45 @@ async function fulfillPaidOrder({
 
             return {
                 alreadyProcessed: true,
+
+                requiresReview: false,
+
                 order,
+
                 tickets: []
             }
         }
 
 
         if (
-            order.status !==
-            'PENDING' &&
-            order.status !==
-            'PAYMENT_ERROR'
+            order.status ===
+            'PAYMENT_REVIEW'
         ) {
+            await connection.commit()
+
+            return {
+                alreadyProcessed: true,
+
+                requiresReview: true,
+
+                order,
+
+                tickets: []
+            }
+        }
+
+
+        const allowedStatuses = [
+            'PENDING',
+            'PAYMENT_ERROR',
+            'EXPIRED',
+            'PAYMENT_FAILED'
+        ]
+
+
+        if (!allowedStatuses.includes(
+                order.status
+            )) {
             throw new Error(
                 `La orden no puede procesarse desde estado ${order.status}`
             )
@@ -558,7 +668,7 @@ async function fulfillPaidOrder({
 
 
         // =====================================================
-        // ORDER ITEMS
+        // ITEMS
         // =====================================================
 
         const [orderItems] =
@@ -582,8 +692,95 @@ async function fulfillPaidOrder({
 
 
         // =====================================================
-        // VALIDAR INVENTARIO DE NUEVO
+        // DETERMINAR ESTADO REAL DE LA RESERVA
         // =====================================================
+
+        const reservationReleased =
+            Boolean(
+                order.reservationReleasedAt
+            )
+
+
+        const reservationExpiresAt =
+            order.reservationExpiresAt ?
+            new Date(
+                order.reservationExpiresAt
+            ) :
+            null
+
+
+        const reservationExpired =
+            reservationExpiresAt ?
+            reservationExpiresAt.getTime() <
+            Date.now() :
+            true
+
+
+        let reservationStillActive = !reservationReleased &&
+            !reservationExpired
+
+
+        /*
+          Caso especial:
+
+          La hora de reserva ya pasó,
+          pero el cleanup todavía no alcanzó
+          a liberar físicamente los cupos.
+
+          Los liberamos aquí dentro de la misma
+          transacción y luego tratamos esto como
+          un pago tardío.
+        */
+
+        if (!reservationReleased &&
+            reservationExpired
+        ) {
+            for (
+                const item of orderItems
+            ) {
+                await connection.execute(
+                    `
+          UPDATE event_zones
+          SET reserved =
+            GREATEST(
+              reserved - ?,
+              0
+            )
+          WHERE id = ?
+          `, [
+                        item.quantity,
+                        item.zoneId
+                    ]
+                )
+            }
+
+
+            await connection.execute(
+                `
+        UPDATE orders
+        SET reservationReleasedAt = NOW()
+        WHERE id = ?
+        `, [
+                    order.id
+                ]
+            )
+
+
+            order.reservationReleasedAt =
+                new Date()
+
+
+            reservationStillActive =
+                false
+        }
+
+
+        // =====================================================
+        // INVENTARIO
+        // =====================================================
+
+        const lockedZones = []
+
 
         for (
             const item of orderItems
@@ -612,62 +809,177 @@ async function fulfillPaidOrder({
                 zones[0]
 
 
-            const available =
-                Number(
-                    zone.capacity
-                ) -
-                Number(
-                    zone.sold
+            // =============================================
+            // RESERVA VIGENTE
+            // =============================================
+
+            if (
+                reservationStillActive
+            ) {
+                if (
+                    Number(
+                        zone.reserved
+                    ) <
+                    Number(
+                        item.quantity
+                    )
+                ) {
+                    throw new Error(
+                        `Reserva inconsistente para ${zone.name}`
+                    )
+                }
+            } else {
+
+                // ===========================================
+                // PAGO TARDÍO / RESERVA YA LIBERADA
+                // ===========================================
+
+                const available =
+                    Number(
+                        zone.capacity
+                    ) -
+                    Number(
+                        zone.sold
+                    ) -
+                    Number(
+                        zone.reserved || 0
+                    )
+
+
+                if (
+                    Number(
+                        item.quantity
+                    ) >
+                    available
+                ) {
+                    await connection.execute(
+                        `
+            UPDATE orders
+            SET
+              status = 'PAYMENT_REVIEW',
+              paymentProvider = 'ONVO',
+              paymentId =
+                COALESCE(
+                  ?,
+                  paymentId
+                ),
+              checkoutSessionId =
+                COALESCE(
+                  ?,
+                  checkoutSessionId
+                ),
+              paidAt = NOW(),
+              reservationReleasedAt =
+                COALESCE(
+                  reservationReleasedAt,
+                  NOW()
                 )
+            WHERE id = ?
+            `, [
+                            paymentId,
+                            checkoutSessionId,
+                            order.id
+                        ]
+                    )
+
+
+                    await connection.commit()
+
+
+                    console.error(
+                        `⚠️ Orden ${order.orderId} pagada pero sin inventario suficiente`
+                    )
+
+
+                    return {
+                        alreadyProcessed: false,
+
+                        requiresReview: true,
+
+                        order: {
+                            ...order,
+                            status: 'PAYMENT_REVIEW'
+                        },
+
+                        tickets: []
+                    }
+                }
+            }
+
+
+            lockedZones.push({
+                item,
+                zone
+            })
+        }
+
+
+        // =====================================================
+        // CONVERTIR RESERVA EN VENTA
+        // =====================================================
+
+        for (
+            const entry of lockedZones
+        ) {
+            const {
+                item,
+                zone
+            } = entry
 
 
             if (
-                Number(
-                    item.quantity
-                ) >
-                available
+                reservationStillActive
             ) {
-                throw new Error(
-                    `No hay suficientes entradas disponibles en ${zone.name}`
+                await connection.execute(
+                    `
+          UPDATE event_zones
+          SET
+            reserved =
+              GREATEST(
+                reserved - ?,
+                0
+              ),
+            sold =
+              sold + ?
+          WHERE id = ?
+          `, [
+                        item.quantity,
+                        item.quantity,
+                        zone.id
+                    ]
+                )
+            } else {
+                /*
+                  La reserva ya había sido liberada.
+                  Como acabamos de comprobar disponibilidad,
+                  simplemente vendemos.
+                */
+
+                await connection.execute(
+                    `
+          UPDATE event_zones
+          SET sold = sold + ?
+          WHERE id = ?
+          `, [
+                        item.quantity,
+                        zone.id
+                    ]
                 )
             }
         }
 
 
         // =====================================================
-        // CREAR TICKETS + ACTUALIZAR SOLD
+        // CREAR TICKETS
         // =====================================================
 
         for (
-            const item of orderItems
+            const entry of lockedZones
         ) {
-            const [zones] =
-            await connection.execute(
-                `
-          SELECT *
-          FROM event_zones
-          WHERE id = ?
-          FOR UPDATE
-          `, [
-                    item.zoneId
-                ]
-            )
-
-
-            const zone =
-                zones[0]
-
-
-            await connection.execute(
-                `
-        UPDATE event_zones
-        SET sold = sold + ?
-        WHERE id = ?
-        `, [
-                    item.quantity,
-                    zone.id
-                ]
-            )
+            const {
+                item,
+                zone
+            } = entry
 
 
             for (
@@ -766,7 +1078,7 @@ async function fulfillPaidOrder({
 
 
         // =====================================================
-        // MARCAR PAID
+        // MARCAR ORDEN PAID
         // =====================================================
 
         await connection.execute(
@@ -775,9 +1087,22 @@ async function fulfillPaidOrder({
       SET
         status = 'PAID',
         paymentProvider = 'ONVO',
-        paymentId = COALESCE(?, paymentId),
-        checkoutSessionId = COALESCE(?, checkoutSessionId),
-        paidAt = NOW()
+        paymentId =
+          COALESCE(
+            ?,
+            paymentId
+          ),
+        checkoutSessionId =
+          COALESCE(
+            ?,
+            checkoutSessionId
+          ),
+        paidAt = NOW(),
+        reservationReleasedAt =
+          COALESCE(
+            reservationReleasedAt,
+            NOW()
+          )
       WHERE id = ?
       `, [
                 paymentId,
@@ -801,9 +1126,13 @@ async function fulfillPaidOrder({
             checkoutSessionId ||
             order.checkoutSessionId
 
+        order.reservationReleasedAt =
+            order.reservationReleasedAt ||
+            new Date()
+
 
         // =====================================================
-        // CORREO + PDFs
+        // EMAIL + PDFs
         // =====================================================
 
         try {
@@ -821,6 +1150,7 @@ async function fulfillPaidOrder({
                     background: #171717;
                   "
                 >
+
                   <div
                     style="
                       font-size: 12px;
@@ -829,6 +1159,7 @@ async function fulfillPaidOrder({
                   >
                     Zona
                   </div>
+
 
                   <div
                     style="
@@ -841,6 +1172,7 @@ async function fulfillPaidOrder({
                     ${ticket.zoneName}
                   </div>
 
+
                   <div
                     style="
                       margin-top: 16px;
@@ -850,6 +1182,7 @@ async function fulfillPaidOrder({
                   >
                     Código del ticket
                   </div>
+
 
                   <div
                     style="
@@ -861,6 +1194,7 @@ async function fulfillPaidOrder({
                   >
                     ${ticket.ticketCode}
                   </div>
+
                 </div>
               `
                     }
@@ -955,6 +1289,7 @@ async function fulfillPaidOrder({
                 EVENTO
               </div>
 
+
               <div
                 style="
                   margin-top: 5px;
@@ -977,6 +1312,7 @@ async function fulfillPaidOrder({
                 FECHA
               </div>
 
+
               <div
                 style="
                   margin-top: 5px;
@@ -996,6 +1332,7 @@ async function fulfillPaidOrder({
               >
                 ORDEN
               </div>
+
 
               <div
                 style="
@@ -1018,6 +1355,7 @@ async function fulfillPaidOrder({
                 TOTAL
               </div>
 
+
               <div
                 style="
                   margin-top: 5px;
@@ -1039,6 +1377,7 @@ async function fulfillPaidOrder({
             <h2>
               Tus tickets
             </h2>
+
 
             ${ticketsHtml}
 
@@ -1108,6 +1447,13 @@ async function fulfillPaidOrder({
                 `✅ Email y PDFs enviados a ${order.buyerEmail}`
             )
         } catch (emailError) {
+            /*
+              La compra ya está PAID.
+
+              Un error de email nunca debe
+              deshacer la venta.
+            */
+
             console.error(
                 '⚠️ Pago confirmado, pero falló el email:',
                 emailError
@@ -1117,6 +1463,8 @@ async function fulfillPaidOrder({
 
         return {
             alreadyProcessed: false,
+
+            requiresReview: false,
 
             order,
 
@@ -1153,14 +1501,15 @@ async function createOrder(
                 ...req.body,
 
                 userId: req.user ?
-                    req.user.id :
-                    null
+                    req.user.id : null
             })
 
 
         return res
             .status(201)
-            .json(result)
+            .json(
+                result
+            )
     } catch (error) {
         console.error(
             'Error creando orden:',
@@ -1190,6 +1539,134 @@ async function getOrderTickets(
             orderId
         } = req.params
 
+
+        if (!orderId) {
+            return res
+                .status(400)
+                .json({
+                    message: 'Order ID requerido'
+                })
+        }
+
+
+        // =====================================================
+        // BUSCAR ORDEN
+        // =====================================================
+
+        const [orders] =
+        await pool.execute(
+            `
+        SELECT
+          id,
+          orderId,
+          userId,
+          buyerEmail,
+          status
+        FROM orders
+        WHERE orderId = ?
+        LIMIT 1
+        `, [
+                orderId
+            ]
+        )
+
+
+        if (!orders.length) {
+            return res
+                .status(404)
+                .json({
+                    message: 'Orden no encontrada'
+                })
+        }
+
+
+        const order =
+            orders[0]
+
+
+        // =====================================================
+        // VALIDAR PROPIEDAD
+        // =====================================================
+
+        const currentUserId =
+            Number(
+                req.user.id
+            )
+
+
+        const orderUserId =
+            order.userId ?
+            Number(
+                order.userId
+            ) :
+            null
+
+
+        const currentEmail =
+            String(
+                req.user.email || ''
+            )
+            .trim()
+            .toLowerCase()
+
+
+        const orderEmail =
+            String(
+                order.buyerEmail || ''
+            )
+            .trim()
+            .toLowerCase()
+
+
+        const isOwnerById =
+            orderUserId &&
+            orderUserId ===
+            currentUserId
+
+
+        const isOwnerByEmail =
+            currentEmail &&
+            orderEmail &&
+            currentEmail ===
+            orderEmail
+
+
+        const isAdmin =
+            req.user.role ===
+            'ADMIN'
+
+
+        if (!isOwnerById &&
+            !isOwnerByEmail &&
+            !isAdmin
+        ) {
+            return res
+                .status(403)
+                .json({
+                    message: 'No tienes permiso para ver los tickets de esta orden'
+                })
+        }
+
+
+        // =====================================================
+        // SOLO ENTREGAR TICKETS SI LA ORDEN ESTÁ PAGADA
+        // =====================================================
+
+        if (
+            order.status !==
+            'PAID'
+        ) {
+            return res
+                .status(409)
+                .json({
+                    message: 'La orden todavía no está pagada'
+                })
+        }
+
+
+        // =====================================================
+        // OBTENER TICKETS
+        // =====================================================
 
         const [tickets] =
         await pool.execute(
@@ -1226,7 +1703,7 @@ async function getOrderTickets(
         )
     } catch (error) {
         console.error(
-            'Error obteniendo tickets:',
+            'Error obteniendo tickets de la orden:',
             error
         )
 
@@ -1239,6 +1716,228 @@ async function getOrderTickets(
     }
 }
 
+async function getOrderStatus(
+    req,
+    res
+) {
+    try {
+        const {
+            orderId
+        } = req.params
+
+
+        if (!orderId) {
+            return res
+                .status(400)
+                .json({
+                    message: 'Order ID requerido'
+                })
+        }
+
+
+        const [orders] =
+        await pool.execute(
+            `
+        SELECT
+          id,
+          orderId,
+          userId,
+          eventId,
+          buyerName,
+          buyerEmail,
+          total,
+          status,
+          paymentProvider,
+          paymentId,
+          checkoutSessionId,
+          paidAt,
+          reservationExpiresAt,
+          reservationReleasedAt,
+          createdAt,
+          updatedAt
+        FROM orders
+        WHERE orderId = ?
+        LIMIT 1
+        `, [
+                orderId
+            ]
+        )
+
+
+        if (!orders.length) {
+            return res
+                .status(404)
+                .json({
+                    message: 'Orden no encontrada'
+                })
+        }
+
+
+        const order =
+            orders[0]
+
+
+        const currentUserId =
+            req.user ?
+            Number(
+                req.user.id
+            ) :
+            null
+
+
+        const orderUserId =
+            order.userId ?
+            Number(
+                order.userId
+            ) :
+            null
+
+
+        const currentEmail =
+            req.user ?
+            String(
+                req.user.email || ''
+            )
+            .trim()
+            .toLowerCase() :
+            ''
+
+
+        const orderEmail =
+            String(
+                order.buyerEmail || ''
+            )
+            .trim()
+            .toLowerCase()
+
+
+        const isOwnerById =
+            currentUserId &&
+            orderUserId &&
+            currentUserId ===
+            orderUserId
+
+
+        const isOwnerByEmail =
+            currentEmail &&
+            orderEmail &&
+            currentEmail ===
+            orderEmail
+
+
+        const isAdmin =
+            req.user &&
+            req.user.role ===
+            'ADMIN'
+
+
+        if (!isOwnerById &&
+            !isOwnerByEmail &&
+            !isAdmin
+        ) {
+            return res
+                .status(403)
+                .json({
+                    message: 'No tienes permiso para consultar esta orden'
+                })
+        }
+
+
+        return res.json({
+            order
+        })
+    } catch (error) {
+        console.error(
+            'Error obteniendo estado de orden:',
+            error
+        )
+
+
+        return res
+            .status(500)
+            .json({
+                message: 'Error obteniendo estado de la orden'
+            })
+    }
+}
+
+
+async function getMyOrders(
+    req,
+    res
+) {
+    try {
+        const userId =
+            Number(
+                req.user.id
+            )
+
+        const userEmail =
+            String(
+                req.user.email || ''
+            )
+            .trim()
+            .toLowerCase()
+
+
+        const [orders] =
+        await pool.execute(
+            `
+        SELECT
+          o.id,
+          o.orderId,
+          o.eventId,
+          o.buyerName,
+          o.buyerEmail,
+          o.total,
+          o.status,
+          o.paymentProvider,
+          o.paidAt,
+          o.reservationExpiresAt,
+          o.createdAt,
+
+          e.title AS eventTitle,
+          e.artist AS eventArtist,
+          e.venue AS eventVenue,
+          e.city AS eventCity,
+          e.country AS eventCountry,
+          e.date AS eventDate,
+          e.image AS eventImage
+
+        FROM orders o
+
+        JOIN events e
+          ON e.id = o.eventId
+
+        WHERE
+          o.userId = ?
+          OR LOWER(o.buyerEmail) = ?
+
+        ORDER BY o.createdAt DESC
+        `, [
+                userId,
+                userEmail
+            ]
+        )
+
+
+        return res.json(
+            orders
+        )
+    } catch (error) {
+        console.error(
+            'Error obteniendo órdenes del usuario:',
+            error
+        )
+
+
+        return res
+            .status(500)
+            .json({
+                message: 'Error obteniendo historial de órdenes'
+            })
+    }
+}
 
 // =========================================================
 // EXPORTS
@@ -1248,5 +1947,7 @@ module.exports = {
     createPurchase,
     createOrder,
     getOrderTickets,
+    getOrderStatus,
+    getMyOrders,
     fulfillPaidOrder
 }

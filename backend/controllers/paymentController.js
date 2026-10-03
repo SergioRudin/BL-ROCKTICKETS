@@ -1,11 +1,21 @@
 const {
     createCheckoutSession
 } = require('../services/onvoService')
-
+const {
+    releaseOrderReservation
+} = require('../services/reservationService')
 const {
     fulfillPaidOrder
 } = require('./orderController')
 
+const {
+    pool
+} = require('../config/db')
+
+
+// =========================================================
+// TEST ONVO
+// =========================================================
 
 async function testOnvo(
     req,
@@ -49,6 +59,186 @@ async function testOnvo(
 
 
 // =========================================================
+// BUSCAR ORDER ID DESDE WEBHOOK
+// =========================================================
+
+async function resolveOrderId(
+    data
+) {
+    const metadata =
+        data.metadata || {}
+
+
+    if (
+        metadata.orderId
+    ) {
+        return metadata.orderId
+    }
+
+
+    const paymentId =
+        data.paymentIntentId ||
+        data.id ||
+        null
+
+
+    if (!paymentId) {
+        return null
+    }
+
+
+    const [orders] =
+    await pool.execute(
+        `
+      SELECT orderId
+      FROM orders
+      WHERE paymentId = ?
+      LIMIT 1
+      `, [
+            paymentId
+        ]
+    )
+
+
+    if (!orders.length) {
+        return null
+    }
+
+
+    return orders[0].orderId
+}
+
+
+// =========================================================
+// PAYMENT FAILED
+// =========================================================
+
+async function markPaymentFailed(
+    data
+) {
+    const orderId =
+        await resolveOrderId(
+            data
+        )
+
+
+    if (!orderId) {
+        console.warn(
+            '⚠️ No se encontró orden para payment-intent.failed'
+        )
+
+        return false
+    }
+
+
+    const [orders] =
+    await pool.execute(
+        `
+      SELECT
+        id,
+        orderId,
+        status,
+        reservationReleasedAt
+      FROM orders
+      WHERE orderId = ?
+      LIMIT 1
+      `, [
+            orderId
+        ]
+    )
+
+
+    if (!orders.length) {
+        console.warn(
+            `⚠️ Orden ${orderId} no encontrada`
+        )
+
+        return false
+    }
+
+
+    const order =
+        orders[0]
+
+
+    // Si ya fue pagada, jamás degradarla
+    if (
+        order.status === 'PAID'
+    ) {
+        console.log(
+            `ℹ️ ${orderId} ya está PAID. Se ignora payment-intent.failed`
+        )
+
+        return false
+    }
+
+
+    // Si requiere revisión, tampoco tocarla
+    if (
+        order.status ===
+        'PAYMENT_REVIEW'
+    ) {
+        console.log(
+            `ℹ️ ${orderId} está en PAYMENT_REVIEW`
+        )
+
+        return false
+    }
+
+
+    // ============================================
+    // LIBERAR RESERVA
+    // ============================================
+
+    if (!order.reservationReleasedAt) {
+        const released =
+            await releaseOrderReservation(
+                orderId,
+                'PAYMENT_FAILED'
+            )
+
+
+        console.log(
+            released ?
+            `❌ Pago fallido. Reserva liberada para ${orderId}` :
+            `ℹ️ Reserva de ${orderId} ya estaba liberada`
+        )
+
+
+        return true
+    }
+
+
+    // ============================================
+    // YA ESTABA LIBERADA
+    // Solo actualizamos estado
+    // ============================================
+
+    await pool.execute(
+        `
+    UPDATE orders
+    SET status = 'PAYMENT_FAILED'
+    WHERE orderId = ?
+      AND status NOT IN (
+        'PAID',
+        'PAYMENT_REVIEW'
+      )
+    `, [
+            orderId
+        ]
+    )
+
+
+    console.log(
+        `❌ Pago fallido para ${orderId}`
+    )
+
+
+    return true
+}
+
+
+// =========================================================
 // WEBHOOK ONVO
 // =========================================================
 
@@ -59,32 +249,18 @@ async function handleOnvoWebhook(
     try {
         const receivedSecret =
             String(
-                req.headers['x-webhook-secret'] || ''
+                req.headers[
+                    'x-webhook-secret'
+                ] || ''
             ).trim()
+
 
         const expectedSecret =
             String(
-                process.env.ONVO_WEBHOOK_SECRET || ''
+                process.env.ONVO_WEBHOOK_SECRET ||
+                ''
             ).trim()
-        console.log(
-            'Webhook secret cargado:',
-            Boolean(expectedSecret)
-        )
 
-        console.log(
-            'Longitud secret .env:',
-            expectedSecret.length
-        )
-
-        console.log(
-            'Longitud secret recibido:',
-            receivedSecret.length
-        )
-
-        console.log(
-            'Secrets coinciden:',
-            receivedSecret === expectedSecret
-        )
 
         if (!expectedSecret ||
             !receivedSecret ||
@@ -92,8 +268,9 @@ async function handleOnvoWebhook(
             expectedSecret
         ) {
             console.warn(
-                '⚠️ Webhook ONVO rechazado por secret inválido'
+                '⚠️ Webhook ONVO rechazado'
             )
+
 
             return res
                 .status(401)
@@ -114,13 +291,13 @@ async function handleOnvoWebhook(
             return res
                 .status(400)
                 .json({
-                    message: 'Payload de webhook inválido'
+                    message: 'Payload inválido'
                 })
         }
 
 
         console.log(
-            '📩 Webhook ONVO recibido:',
+            '📩 Webhook ONVO:',
             event.type
         )
 
@@ -142,15 +319,14 @@ async function handleOnvoWebhook(
                 'paid'
             ) {
                 console.log(
-                    'ℹ️ Checkout completado pero no pagado'
+                    'ℹ️ Checkout completado sin pago confirmado'
                 )
 
-                return res
-                    .status(200)
-                    .json({
-                        received: true,
-                        processed: false
-                    })
+
+                return res.json({
+                    received: true,
+                    processed: false
+                })
             }
 
 
@@ -164,8 +340,9 @@ async function handleOnvoWebhook(
 
             if (!orderId) {
                 console.error(
-                    '❌ Webhook sin metadata.orderId'
+                    '❌ Checkout pagado sin orderId'
                 )
+
 
                 return res
                     .status(400)
@@ -173,12 +350,6 @@ async function handleOnvoWebhook(
                         message: 'Webhook sin orderId'
                     })
             }
-
-
-            console.log(
-                '💳 Pago confirmado para:',
-                orderId
-            )
 
 
             const result =
@@ -193,25 +364,137 @@ async function handleOnvoWebhook(
                 })
 
 
-            console.log(
-                result.alreadyProcessed ?
-                `ℹ️ Orden ${orderId} ya había sido procesada` :
-                `✅ Orden ${orderId} procesada correctamente`
-            )
+            if (
+                result.requiresReview
+            ) {
+                console.warn(
+                    `⚠️ Orden ${orderId} requiere revisión`
+                )
+            } else if (
+                result.alreadyProcessed
+            ) {
+                console.log(
+                    `ℹ️ Orden ${orderId} ya estaba procesada`
+                )
+            } else {
+                console.log(
+                    `✅ Orden ${orderId} pagada y procesada`
+                )
+            }
 
 
-            return res
-                .status(200)
-                .json({
-                    received: true,
-                    processed: true,
-                    alreadyProcessed: result.alreadyProcessed
-                })
+            return res.json({
+                received: true,
+                processed: true,
+                alreadyProcessed: Boolean(
+                    result.alreadyProcessed
+                ),
+                requiresReview: Boolean(
+                    result.requiresReview
+                )
+            })
         }
 
 
         // =====================================================
-        // OTROS EVENTOS
+        // PAYMENT INTENT EXITOSO
+        // =====================================================
+
+        if (
+            event.type ===
+            'payment-intent.succeeded'
+        ) {
+            const data =
+                event.data
+
+
+            const orderId =
+                await resolveOrderId(
+                    data
+                )
+
+
+            if (!orderId) {
+                console.log(
+                    'ℹ️ payment-intent.succeeded sin orden asociada'
+                )
+
+
+                return res.json({
+                    received: true,
+                    processed: false
+                })
+            }
+
+
+            const result =
+                await fulfillPaidOrder({
+                    orderId,
+
+                    paymentId: data.id ||
+                        data.paymentIntentId ||
+                        null,
+
+                    checkoutSessionId: null
+                })
+
+
+            return res.json({
+                received: true,
+                processed: true,
+                alreadyProcessed: Boolean(
+                    result.alreadyProcessed
+                ),
+                requiresReview: Boolean(
+                    result.requiresReview
+                )
+            })
+        }
+
+
+        // =====================================================
+        // PAYMENT INTENT FALLIDO
+        // =====================================================
+
+        if (
+            event.type ===
+            'payment-intent.failed'
+        ) {
+            const processed =
+                await markPaymentFailed(
+                    event.data
+                )
+
+
+            return res.json({
+                received: true,
+                processed
+            })
+        }
+
+
+        // =====================================================
+        // PAYMENT DEFERRED
+        // =====================================================
+
+        if (
+            event.type ===
+            'payment-intent.deferred'
+        ) {
+            console.log(
+                '⏳ Pago pendiente de confirmación'
+            )
+
+
+            return res.json({
+                received: true,
+                processed: false
+            })
+        }
+
+
+        // =====================================================
+        // EVENTOS QUE NO UTILIZAMOS
         // =====================================================
 
         console.log(
@@ -220,12 +503,10 @@ async function handleOnvoWebhook(
         )
 
 
-        return res
-            .status(200)
-            .json({
-                received: true,
-                processed: false
-            })
+        return res.json({
+            received: true,
+            processed: false
+        })
     } catch (error) {
         console.error(
             '❌ Error procesando webhook ONVO:',
@@ -243,6 +524,6 @@ async function handleOnvoWebhook(
 
 
 module.exports = {
-    testOnvo,
+
     handleOnvoWebhook
 }

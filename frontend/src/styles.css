@@ -1814,6 +1814,8 @@ textarea {
 
 .nav-user-menu {
     position: relative;
+    display: inline-flex;
+    align-items: center;
 }
 
 .nav-user-trigger {
@@ -1830,7 +1832,8 @@ textarea {
     transition: transform 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
 }
 
-.nav-user-trigger:hover {
+.nav-user-trigger:hover,
+.nav-user-menu:focus-within .nav-user-trigger {
     transform: translateY(-2px);
     background: rgba(239, 68, 68, 0.2);
     box-shadow: 0 0 24px rgba(239, 68, 68, 0.25);
@@ -1846,20 +1849,41 @@ textarea {
 
 .nav-user-dropdown {
     position: absolute;
-    top: calc(100% + 0.75rem);
+    top: 100%;
     right: 0;
     width: 220px;
-    padding: 0.65rem;
+    padding: 1.4rem 0.65rem 0.65rem;
     border-radius: 18px;
     border: 1px solid rgba(239, 68, 68, 0.28);
     background: rgba(15, 15, 15, 0.98);
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45), 0 0 24px rgba(239, 68, 68, 0.18);
-    display: none;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-4px);
     z-index: 50;
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
 }
 
-.nav-user-menu:hover .nav-user-dropdown {
-    display: block;
+
+/* Puente invisible para evitar que el hover se pierda */
+
+.nav-user-dropdown::before {
+    content: "";
+    position: absolute;
+    top: -0.75rem;
+    left: 0;
+    right: 0;
+    height: 0.75rem;
+    background: transparent;
+}
+
+.nav-user-menu:hover .nav-user-dropdown,
+.nav-user-menu:focus-within .nav-user-dropdown {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
 }
 
 .nav-user-dropdown-header {
@@ -2551,4 +2575,267 @@ textarea {
 
 .account-card .form-grid {
     margin-top: 1.5rem;
+}
+
+.checkout-payment-message {
+    margin-bottom: 24px;
+    padding: 16px 18px;
+    border: 1px solid rgba(255, 86, 86, 0.35);
+    border-radius: 14px;
+    background: rgba(255, 43, 43, 0.08);
+    color: #ffffff;
+}
+
+.checkout-payment-message strong {
+    display: block;
+    margin-bottom: 6px;
+    color: #ff5656;
+    font-size: 16px;
+}
+
+.checkout-payment-message p {
+    margin: 0;
+    color: #cfcfcf;
+    line-height: 1.5;
+}
+
+.account-orders {
+    margin-top: 32px;
+}
+
+.account-orders__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 20px;
+}
+
+.account-orders__header h2 {
+    margin: 4px 0 6px;
+    color: #ffffff;
+    font-size: 26px;
+}
+
+.account-orders__header p {
+    margin: 0;
+    color: #969696;
+}
+
+.account-orders__eyebrow {
+    color: #ff5656;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+
+/* =========================================================
+   LIST
+========================================================= */
+
+.orders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+
+/* =========================================================
+   ORDER CARD
+========================================================= */
+
+.order-card {
+    overflow: hidden;
+    border: 1px solid #292929;
+    border-radius: 18px;
+    background: #101010;
+}
+
+.order-card__main {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 20px;
+}
+
+.order-card__event {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+}
+
+.order-card__event img {
+    width: 90px;
+    height: 90px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: 13px;
+}
+
+.order-card__event h3 {
+    margin: 4px 0 8px;
+    color: #ffffff;
+    font-size: 20px;
+}
+
+.order-card__event p {
+    margin: 3px 0;
+    color: #969696;
+    font-size: 14px;
+}
+
+.order-card__artist {
+    color: #ff5656;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+.order-status {
+    display: inline-flex;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: #242424;
+    color: #cfcfcf;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.order-status--paid {
+    background: rgba(34, 197, 94, 0.12);
+    color: #4ade80;
+}
+
+.order-status--pending {
+    background: rgba(234, 179, 8, 0.12);
+    color: #facc15;
+}
+
+.order-status--expired {
+    background: rgba(148, 163, 184, 0.12);
+    color: #cbd5e1;
+}
+
+.order-status--failed {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ff5656;
+}
+
+.order-status--review {
+    background: rgba(249, 115, 22, 0.12);
+    color: #fb923c;
+}
+
+
+/* =========================================================
+   FOOTER
+========================================================= */
+
+.order-card__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 16px 20px;
+    border-top: 1px solid #292929;
+    background: #151515;
+}
+
+.order-card__info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+}
+
+.order-card__info>div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.order-card__info span {
+    color: #777777;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.order-card__info strong {
+    color: #ffffff;
+    font-size: 13px;
+}
+
+
+/* =========================================================
+   EMPTY / ERROR
+========================================================= */
+
+.orders-empty,
+.orders-error {
+    padding: 32px;
+    border: 1px solid #292929;
+    border-radius: 18px;
+    background: #101010;
+    text-align: center;
+}
+
+.orders-empty h3 {
+    margin-top: 0;
+    color: #ffffff;
+}
+
+.orders-empty p {
+    margin-bottom: 22px;
+    color: #969696;
+}
+
+.orders-error {
+    color: #ff5656;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (max-width: 700px) {
+    .order-card__main {
+        flex-direction: column;
+    }
+    .order-card__status {
+        align-self: flex-start;
+    }
+    .order-card__footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .order-card__info {
+        gap: 18px;
+    }
+    .order-card__footer .btn-primary {
+        width: 100%;
+        text-align: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .order-card__event {
+        align-items: flex-start;
+    }
+    .order-card__event img {
+        width: 72px;
+        height: 72px;
+    }
+    .order-card__event h3 {
+        font-size: 17px;
+    }
 }

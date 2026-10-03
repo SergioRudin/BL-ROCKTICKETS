@@ -4,24 +4,22 @@ const router = express.Router()
 
 const {
     getTickets,
-    getTicketsByOrder,
     getTicketByCode,
     markTicketUsed,
     transferTicket,
-    createTestTickets,
     getMyTickets
 } = require('../controllers/ticketController')
 
 const {
     auth,
-    optionalAuth,
     requireRole
 } = require('../middleware/auth')
 
 
-/*
-  Todos los tickets
-*/
+// =========================================================
+// TODOS LOS TICKETS
+// SOLO ADMIN
+// =========================================================
 
 router.get(
     '/',
@@ -30,20 +28,10 @@ router.get(
     getTickets
 )
 
-/*
-  Crear tickets de prueba
-*/
 
-router.post(
-    '/test',
-    optionalAuth,
-    createTestTickets
-)
-
-
-/*
-  Mis tickets
-*/
+// =========================================================
+// MIS TICKETS
+// =========================================================
 
 router.get(
     '/me',
@@ -52,44 +40,41 @@ router.get(
 )
 
 
-/*
-  Buscar tickets por orderId
-*/
-
-router.get(
-    '/order/:orderId',
-    getTicketsByOrder
-)
-
-
-/*
-  Buscar ticket por código QR
-*/
+// =========================================================
+// BUSCAR TICKET POR QR / CÓDIGO
+// SOLO STAFF Y ADMIN
+// =========================================================
 
 router.get(
     '/code/:ticketCode',
+    auth,
+    requireRole(
+        'STAFF',
+        'ADMIN'
+    ),
     getTicketByCode
 )
 
 
-/*
-  Validar ingreso.
-
-  Solo STAFF y ADMIN pueden marcar
-  un ticket como USED.
-*/
+// =========================================================
+// VALIDAR / USAR TICKET
+// SOLO STAFF Y ADMIN
+// =========================================================
 
 router.put(
     '/:id/use',
     auth,
-    requireRole('STAFF', 'ADMIN'),
+    requireRole(
+        'STAFF',
+        'ADMIN'
+    ),
     markTicketUsed
 )
 
 
-/*
-  Transferir ticket
-*/
+// =========================================================
+// TRANSFERIR TICKET
+// =========================================================
 
 router.put(
     '/:id/transfer',

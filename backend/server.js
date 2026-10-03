@@ -1,182 +1,300 @@
-require('dotenv').config();
-
+require('dotenv').config()
+const {
+    expireOldPendingOrders
+} = require('./services/orderCleanupService')
 const express =
-    require('express');
-
+    require('express')
+const {
+    apiLimiter
+} = require('./middleware/rateLimits')
 const cors =
-    require('cors');
+    require('cors')
 
 const {
-    testConnection,
-} = require('./config/db');
+    testConnection
+} = require('./config/db')
 
 const paymentRoutes =
     require('./routes/paymentRoutes')
+
 const eventRoutes =
-    require('./routes/eventRoutes');
+    require('./routes/eventRoutes')
 
 const orderRoutes =
-    require('./routes/orderRoutes');
+    require('./routes/orderRoutes')
 
 const ticketRoutes =
-    require('./routes/ticketRoutes');
+    require('./routes/ticketRoutes')
 
 const dashboardRoutes =
-    require('./routes/dashboardRoutes');
+    require('./routes/dashboardRoutes')
 
 const authRoutes =
-    require('./routes/authRoutes');
-
-
-const {
-    auth,
-} = require('./middleware/auth');
+    require('./routes/authRoutes')
 
 const {
-    getMyTickets,
-} = require('./controllers/ticketController');
+    auth
+} = require('./middleware/auth')
 
+const {
+    getMyTickets
+} = require('./controllers/ticketController')
 
+const helmet = require('helmet')
 const app =
-    express();
+    express()
 
+app.disable(
+    'x-powered-by'
+)
 
+app.use(
+        helmet()
+    )
+    // =========================================================
+    // CORS
+    // =========================================================
+
+const allowedOrigins = [
+    process.env.FRONTEND_URL,
+    process.env.SCANNER_URL,
+    process.env.SCANNER_LOCAL_URL
+].filter(Boolean)
+
+app.use(
+    '/api',
+    apiLimiter
+)
 app.use(
     cors({
-        origin: process.env.FRONTEND_URL ||
-            'http://localhost:5173',
+        origin: function(
+            origin,
+            callback
+        ) {
+            /*
+              Permite requests sin origin, por ejemplo:
+              Thunder Client, Postman, servidor-servidor.
+            */
 
-        credentials: true,
+            if (!origin) {
+                return callback(
+                    null,
+                    true
+                )
+            }
+
+
+            if (
+                allowedOrigins.includes(
+                    origin
+                )
+            ) {
+                return callback(
+                    null,
+                    true
+                )
+            }
+
+
+            console.warn(
+                `⚠️ Origen bloqueado por CORS: ${origin}`
+            )
+
+
+            return callback(
+                new Error(
+                    'Origen no permitido por CORS'
+                )
+            )
+        },
+
+        methods: [
+            'GET',
+            'POST',
+            'PUT',
+            'PATCH',
+            'DELETE',
+            'OPTIONS'
+        ],
+
+        allowedHeaders: [
+            'Content-Type',
+            'Authorization',
+            'X-Webhook-Secret'
+        ]
     })
-);
+)
 
+
+// =========================================================
+// BODY PARSERS
+// =========================================================
 
 app.use(
-    express.json()
-);
+    express.json({
+        limit: '1mb'
+    })
+)
+
+app.use(
+    express.urlencoded({
+        extended: true,
+        limit: '1mb'
+    })
+)
+
+
+// =========================================================
+// HEALTH
+// =========================================================
+
+app.get(
+    '/api/health',
+    (req, res) => {
+        return res.json({
+            ok: true,
+            database: 'MySQL',
+            project: 'RockTickets'
+        })
+    }
+)
+
+
+// =========================================================
+// ROUTES
+// =========================================================
+
+app.use(
+    '/api/auth',
+    authRoutes
+)
+
+app.use(
+    '/api/events',
+    eventRoutes
+)
+
+app.use(
+    '/api/orders',
+    orderRoutes
+)
+
+app.use(
+    '/api/tickets',
+    ticketRoutes
+)
+
+app.use(
+    '/api/dashboard',
+    dashboardRoutes
+)
 
 app.use(
     '/api/payments',
     paymentRoutes
 )
-app.use(
-    express.urlencoded({
-        extended: true,
-    })
-);
 
 
-/*
-==========================================================
-HEALTH
-==========================================================
-*/
-
-app.get(
-    '/api/health',
-    (req, res) => {
-        res.json({
-            ok: true,
-
-            database: 'MySQL',
-
-            project: 'RockTickets',
-        });
-    }
-);
-
-
-/*
-==========================================================
-ROUTES
-==========================================================
-*/
-
-app.use(
-    '/api/auth',
-    authRoutes
-);
-
-
-app.use(
-    '/api/events',
-    eventRoutes
-);
-
-
-app.use(
-    '/api/orders',
-    orderRoutes
-);
-
-
-app.use(
-    '/api/tickets',
-    ticketRoutes
-);
-
-
-app.use(
-    '/api/dashboard',
-    dashboardRoutes
-);
-
-
-/*
-==========================================================
-COMPATIBILIDAD /api/me/tickets
-==========================================================
-*/
+// =========================================================
+// COMPATIBILIDAD /api/me/tickets
+// =========================================================
 
 app.get(
     '/api/me/tickets',
     auth,
     getMyTickets
-);
+)
 
 
-/*
-==========================================================
-404
-==========================================================
-*/
+// =========================================================
+// 404
+// =========================================================
 
 app.use(
     (req, res) => {
-        res.status(404).json({
-            message: 'Ruta no encontrada',
-        });
+        return res
+            .status(404)
+            .json({
+                message: 'Ruta no encontrada'
+            })
     }
-);
+)
 
 
-/*
-==========================================================
-SERVER
-==========================================================
-*/
+// =========================================================
+// ERROR HANDLER GENERAL
+// =========================================================
+
+app.use(
+    (
+        error,
+        req,
+        res,
+        next
+    ) => {
+        console.error(
+            '❌ Error del servidor:',
+            error
+        )
+
+
+        return res
+            .status(500)
+            .json({
+                message: error.message ||
+                    'Error interno del servidor'
+            })
+    }
+)
+
+
+// =========================================================
+// SERVER
+// =========================================================
 
 const PORT =
     process.env.PORT ||
-    5000;
+    5000
 
 
 async function startServer() {
-    await testConnection();
+    try {
+        await testConnection()
+        await expireOldPendingOrders()
 
-    app.listen(
-        PORT,
-        () => {
-            console.log(
-                `🚀 RockTickets API corriendo en http://localhost:${PORT}`
-            );
+        app.listen(
+            PORT,
+            () => {
+                console.log(
+                    `🚀 RockTickets API corriendo en http://localhost:${PORT}`
+                )
 
-            console.log(
-                `🗄️ Base de datos: MySQL`
-            );
-        }
-    );
+                console.log(
+                    '🗄️ Base de datos: MySQL'
+                )
+
+                console.log(
+                    '🌐 Orígenes permitidos por CORS:'
+                )
+
+                allowedOrigins.forEach(
+                    (origin) => {
+                        console.log(
+                            `   - ${origin}`
+                        )
+                    }
+                )
+            }
+        )
+    } catch (error) {
+        console.error(
+            '❌ No se pudo iniciar RockTickets:',
+            error
+        )
+
+        process.exit(1)
+    }
 }
 
 
-startServer();
+startServer()

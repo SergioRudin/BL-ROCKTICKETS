@@ -1,7 +1,17 @@
-import { useState } from 'react'
-import { useAuth } from '../context/AuthContext'
+import {
+  useState
+} from 'react'
 
-const API_URL = 'http://localhost:5000/api'
+import {
+  useAuth
+} from '../context/AuthContext'
+
+import OrderHistory from '../components/OrderHistory'
+
+
+const API_URL =
+  'http://localhost:5000/api'
+
 
 export default function AccountPage() {
   const {
@@ -9,86 +19,118 @@ export default function AccountPage() {
     token
   } = useAuth()
 
-  const [profileForm, setProfileForm] =
-    useState({
-      name:
-        user && user.name
-          ? user.name
-          : '',
 
-      phone:
-        user && user.phone
-          ? user.phone
-          : '',
+  const [
+    profileForm,
+    setProfileForm
+  ] = useState({
+    name:
+      user && user.name
+        ? user.name
+        : '',
 
-      avatar:
-        user && user.avatar
-          ? user.avatar
-          : ''
-    })
+    phone:
+      user && user.phone
+        ? user.phone
+        : '',
 
-  const [passwordForm, setPasswordForm] =
-    useState({
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    })
-
-  const [profileMessage, setProfileMessage] =
-    useState('')
-
-  const [passwordMessage, setPasswordMessage] =
-    useState('')
-
-  const [loadingProfile, setLoadingProfile] =
-    useState(false)
-
-  const [loadingPassword, setLoadingPassword] =
-    useState(false)
+    avatar:
+      user && user.avatar
+        ? user.avatar
+        : ''
+  })
 
 
-  function handleProfileChange(event) {
+  const [
+    passwordForm,
+    setPasswordForm
+  ] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
+
+
+  const [
+    profileMessage,
+    setProfileMessage
+  ] = useState('')
+
+
+  const [
+    passwordMessage,
+    setPasswordMessage
+  ] = useState('')
+
+
+  const [
+    loadingProfile,
+    setLoadingProfile
+  ] = useState(false)
+
+
+  const [
+    loadingPassword,
+    setLoadingPassword
+  ] = useState(false)
+
+
+  function handleProfileChange(
+    event
+  ) {
     const {
       name,
       value
     } = event.target
+
 
     setProfileForm(
       (prev) => ({
         ...prev,
-        [name]: value
+        [name]:
+          value
       })
     )
   }
 
 
-  function handlePasswordChange(event) {
+  function handlePasswordChange(
+    event
+  ) {
     const {
       name,
       value
     } = event.target
 
+
     setPasswordForm(
       (prev) => ({
         ...prev,
-        [name]: value
+        [name]:
+          value
       })
     )
   }
 
 
-  async function handleProfileSubmit(event) {
+  async function handleProfileSubmit(
+    event
+  ) {
     event.preventDefault()
+
 
     try {
       setLoadingProfile(true)
+
       setProfileMessage('')
+
 
       const response =
         await fetch(
           `${API_URL}/auth/me`,
           {
-            method: 'PUT',
+            method:
+              'PUT',
 
             headers: {
               'Content-Type':
@@ -112,8 +154,10 @@ export default function AccountPage() {
           }
         )
 
+
       const data =
         await response.json()
+
 
       if (!response.ok) {
         throw new Error(
@@ -122,14 +166,20 @@ export default function AccountPage() {
         )
       }
 
+
       setProfileMessage(
         'Perfil actualizado correctamente.'
       )
 
-      if (data.user) {
+
+      if (
+        data.user
+      ) {
         localStorage.setItem(
           'rocktickets_user',
-          JSON.stringify(data.user)
+          JSON.stringify(
+            data.user
+          )
         )
       }
     } catch (error) {
@@ -143,10 +193,14 @@ export default function AccountPage() {
   }
 
 
-  async function handlePasswordSubmit(event) {
+  async function handlePasswordSubmit(
+    event
+  ) {
     event.preventDefault()
 
+
     setPasswordMessage('')
+
 
     if (
       !passwordForm.currentPassword ||
@@ -160,6 +214,7 @@ export default function AccountPage() {
       return
     }
 
+
     if (
       passwordForm.newPassword !==
       passwordForm.confirmPassword
@@ -171,8 +226,10 @@ export default function AccountPage() {
       return
     }
 
+
     if (
-      passwordForm.newPassword.length < 6
+      passwordForm.newPassword.length <
+      6
     ) {
       setPasswordMessage(
         'La nueva contraseña debe tener al menos 6 caracteres'
@@ -181,14 +238,17 @@ export default function AccountPage() {
       return
     }
 
+
     try {
       setLoadingPassword(true)
+
 
       const response =
         await fetch(
           `${API_URL}/auth/change-password`,
           {
-            method: 'PUT',
+            method:
+              'PUT',
 
             headers: {
               'Content-Type':
@@ -209,8 +269,10 @@ export default function AccountPage() {
           }
         )
 
+
       const data =
         await response.json()
+
 
       if (!response.ok) {
         throw new Error(
@@ -219,9 +281,11 @@ export default function AccountPage() {
         )
       }
 
+
       setPasswordMessage(
         'Contraseña actualizada correctamente.'
       )
+
 
       setPasswordForm({
         currentPassword: '',
@@ -248,6 +312,7 @@ export default function AccountPage() {
           Mi cuenta
         </h2>
 
+
         <p className="muted">
           Administra tus datos personales y preferencias de cuenta.
         </p>
@@ -255,50 +320,73 @@ export default function AccountPage() {
 
         <form
           className="form-grid"
-          onSubmit={handleProfileSubmit}
+          onSubmit={
+            handleProfileSubmit
+          }
         >
 
           <input
             name="name"
             placeholder="Nombre"
-            value={profileForm.name}
-            onChange={handleProfileChange}
+            value={
+              profileForm.name
+            }
+            onChange={
+              handleProfileChange
+            }
             required
           />
+
 
           <input
             name="phone"
             placeholder="Teléfono"
-            value={profileForm.phone}
-            onChange={handleProfileChange}
+            value={
+              profileForm.phone
+            }
+            onChange={
+              handleProfileChange
+            }
           />
+
 
           <input
             name="avatar"
             placeholder="URL de avatar"
-            value={profileForm.avatar}
-            onChange={handleProfileChange}
+            value={
+              profileForm.avatar
+            }
+            onChange={
+              handleProfileChange
+            }
           />
+
 
           <input
             value={
-              user && user.email
+              user &&
+              user.email
                 ? user.email
                 : ''
             }
             disabled
           />
 
+
           <button
             className="btn-primary"
             type="submit"
-            disabled={loadingProfile}
+            disabled={
+              loadingProfile
+            }
           >
+
             {
               loadingProfile
                 ? 'Guardando...'
                 : 'Guardar cambios'
             }
+
           </button>
 
         </form>
@@ -322,46 +410,67 @@ export default function AccountPage() {
 
         <form
           className="form-grid"
-          onSubmit={handlePasswordSubmit}
+          onSubmit={
+            handlePasswordSubmit
+          }
         >
 
           <input
             name="currentPassword"
             type="password"
             placeholder="Contraseña actual"
-            value={passwordForm.currentPassword}
-            onChange={handlePasswordChange}
+            value={
+              passwordForm.currentPassword
+            }
+            onChange={
+              handlePasswordChange
+            }
             required
           />
+
 
           <input
             name="newPassword"
             type="password"
             placeholder="Nueva contraseña"
-            value={passwordForm.newPassword}
-            onChange={handlePasswordChange}
+            value={
+              passwordForm.newPassword
+            }
+            onChange={
+              handlePasswordChange
+            }
             required
           />
+
 
           <input
             name="confirmPassword"
             type="password"
             placeholder="Confirmar nueva contraseña"
-            value={passwordForm.confirmPassword}
-            onChange={handlePasswordChange}
+            value={
+              passwordForm.confirmPassword
+            }
+            onChange={
+              handlePasswordChange
+            }
             required
           />
+
 
           <button
             className="btn-primary"
             type="submit"
-            disabled={loadingPassword}
+            disabled={
+              loadingPassword
+            }
           >
+
             {
               loadingPassword
                 ? 'Actualizando...'
                 : 'Cambiar contraseña'
             }
+
           </button>
 
         </form>
@@ -374,6 +483,13 @@ export default function AccountPage() {
         )}
 
       </section>
+
+
+      {/* =====================================================
+          HISTORIAL DE COMPRAS
+      ===================================================== */}
+
+      <OrderHistory />
 
     </div>
   )

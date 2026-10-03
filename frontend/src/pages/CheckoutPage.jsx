@@ -1,35 +1,97 @@
-import { useState } from 'react'
-import { useCart } from '../context/CartContext'
-import { formatMoney } from '../utils/formatters'
-import { createOrder } from '../utils/api'
+import {
+  useEffect,
+  useState
+} from 'react'
+
+import {
+  useSearchParams
+} from 'react-router-dom'
+
+import {
+  useCart
+} from '../context/CartContext'
+
+import {
+  formatMoney
+} from '../utils/formatters'
+
+import {
+  createOrder
+} from '../utils/api'
 
 
 export default function CheckoutPage() {
+  const [searchParams] =
+    useSearchParams()
+
+
+  const [
+    paymentMessage,
+    setPaymentMessage
+  ] = useState('')
+
+
+  useEffect(
+    () => {
+      const paymentStatus =
+        searchParams.get(
+          'payment'
+        )
+
+
+      if (
+        paymentStatus ===
+        'cancelled'
+      ) {
+        setPaymentMessage(
+          'El pago fue cancelado. Tus entradas no fueron cobradas y puedes intentarlo nuevamente.'
+        )
+      }
+    },
+    [
+      searchParams
+    ]
+  )
+
+
   const {
     items,
     total,
     removeItem
   } = useCart()
 
-  const [buyer, setBuyer] =
-    useState({
-      name: '',
-      email: ''
-    })
 
-  const [loading, setLoading] =
-    useState(false)
-
-  const [error, setError] =
-    useState('')
+  const [
+    buyer,
+    setBuyer
+  ] = useState({
+    name: '',
+    email: ''
+  })
 
 
-  async function handleSubmit(e) {
+  const [
+    loading,
+    setLoading
+  ] = useState(false)
+
+
+  const [
+    error,
+    setError
+  ] = useState('')
+
+
+  async function handleSubmit(
+    e
+  ) {
     e.preventDefault()
+
 
     if (!items.length) {
       return
     }
+
 
     setError('')
 
@@ -60,15 +122,23 @@ export default function CheckoutPage() {
 
       const groupedByZone =
         items.reduce(
-          (acc, item) => {
+          (
+            acc,
+            item
+          ) => {
             const zoneCode =
               item.zoneCode
 
-            if (!acc[zoneCode]) {
+
+            if (
+              !acc[zoneCode]
+            ) {
               acc[zoneCode] = 0
             }
 
+
             acc[zoneCode] += 1
+
 
             return acc
           },
@@ -84,7 +154,12 @@ export default function CheckoutPage() {
         Object.entries(
           groupedByZone
         ).map(
-          ([zoneCode, quantity]) => {
+          (
+            [
+              zoneCode,
+              quantity
+            ]
+          ) => {
             return {
               zoneCode,
               quantity
@@ -138,14 +213,8 @@ export default function CheckoutPage() {
 
 
       // =====================================================
-      // IMPORTANTE:
-      // NO limpiar carrito todavía.
-      //
-      // Primero mandamos al usuario a ONVO.
-      // Después podemos limpiarlo cuando el pago esté
-      // confirmado.
+      // NO LIMPIAMOS CARRITO TODAVÍA
       // =====================================================
-
 
       window.location.href =
         result.checkoutUrl
@@ -155,10 +224,12 @@ export default function CheckoutPage() {
         error
       )
 
+
       setError(
         error.message ||
         'No se pudo iniciar el pago'
       )
+
 
       setLoading(false)
     }
@@ -195,6 +266,7 @@ export default function CheckoutPage() {
                   <strong>
                     {item.eventTitle}
                   </strong>
+
 
                   <p>
                     {item.zone} · Entrada
@@ -243,24 +315,48 @@ export default function CheckoutPage() {
         </h2>
 
 
+        {paymentMessage && (
+          <div className="checkout-payment-message">
+
+            <strong>
+              Pago cancelado
+            </strong>
+
+
+            <p>
+              {paymentMessage}
+            </p>
+
+          </div>
+        )}
+
+
         <form
           className="stack-sm"
-          onSubmit={handleSubmit}
+          onSubmit={
+            handleSubmit
+          }
         >
 
           <input
             type="text"
             placeholder="Nombre completo"
-            value={buyer.name}
-            disabled={loading}
-            onChange={(e) =>
-              setBuyer(
-                (prev) => ({
-                  ...prev,
-                  name:
-                    e.target.value
-                })
-              )
+            value={
+              buyer.name
+            }
+            disabled={
+              loading
+            }
+            onChange={
+              (e) =>
+                setBuyer(
+                  (prev) => ({
+                    ...prev,
+
+                    name:
+                      e.target.value
+                  })
+                )
             }
             required
           />
@@ -269,16 +365,22 @@ export default function CheckoutPage() {
           <input
             type="email"
             placeholder="Correo electrónico"
-            value={buyer.email}
-            disabled={loading}
-            onChange={(e) =>
-              setBuyer(
-                (prev) => ({
-                  ...prev,
-                  email:
-                    e.target.value
-                })
-              )
+            value={
+              buyer.email
+            }
+            disabled={
+              loading
+            }
+            onChange={
+              (e) =>
+                setBuyer(
+                  (prev) => ({
+                    ...prev,
+
+                    email:
+                      e.target.value
+                  })
+                )
             }
             required
           />
@@ -290,6 +392,7 @@ export default function CheckoutPage() {
               Total
             </span>
 
+
             <strong>
               {formatMoney(
                 total
@@ -299,13 +402,11 @@ export default function CheckoutPage() {
           </div>
 
 
-          {
-            error && (
-              <div className="auth-error">
-                {error}
-              </div>
-            )
-          }
+          {error && (
+            <div className="auth-error">
+              {error}
+            </div>
+          )}
 
 
           <button
